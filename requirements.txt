@@ -3,3 +3,6 @@ pandas>=2.0.0
 numpy>=1.24.0
 yfinance>=0.2.35
 streamlit>=1.30.0
+groq>=0.4.2
+plotly>=5.18.0
+python-dotenv

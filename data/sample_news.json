@@ -1,0 +1,32 @@
+[
+  {
+    "ticker": "NVDA",
+    "headline": "Nvidia unveils next-generation enterprise AI accelerator architecture with strong margin guidance.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T12:00:00Z"
+  },
+  {
+    "ticker": "TSLA",
+    "headline": "Tesla automotive bond yields surge following credit downgrade warnings from rating agencies.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T11:30:00Z"
+  },
+  {
+    "ticker": "MSFT",
+    "headline": "Microsoft beats quarterly revenue estimates on strong corporate cloud infrastructure demand.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T10:15:00Z"
+  },
+  {
+    "ticker": "XOM",
+    "headline": "ExxonMobil reports breakthrough crude discoveries, forecasting robust dividend growth.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T09:00:00Z"
+  },
+  {
+    "ticker": "JPM",
+    "headline": "JPMorgan faces regulatory scrutiny over potential systemic credit exposure and margin failures.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T08:45:00Z"
+  }
+]
