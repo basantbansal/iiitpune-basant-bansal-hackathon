@@ -1,7 +1,7 @@
 from typing import Dict, List, Any
 import numpy as np
 import pandas as pd
-import yfinance as yf
+from .price_provider import PriceProvider
 
 
 class IndexRebalancer:
@@ -19,6 +19,7 @@ class IndexRebalancer:
         min_weight: float = 0.02,
         max_weight: float = 0.25,
         alpha_tilt: float = 0.05,
+        price_provider: PriceProvider = None,
     ):
         self.tickers = tickers or [
             "AAPL",
@@ -36,6 +37,7 @@ class IndexRebalancer:
         self.min_weight = min_weight
         self.max_weight = max_weight
         self.alpha_tilt = alpha_tilt
+        self.price_provider = price_provider or PriceProvider()
 
         # Initialize Equal-Weight Portfolio
         n_assets = len(self.tickers)
@@ -47,29 +49,7 @@ class IndexRebalancer:
 
     def fetch_current_prices(self) -> Dict[str, float]:
         """Fetches the latest market close prices for the index constituents."""
-        prices = {}
-        try:
-            data = yf.download(self.tickers, period="5d", progress=False)[
-                "Close"
-            ]
-            latest_prices = data.iloc[-1].to_dict()
-            prices = {
-                str(k): float(v)
-                for k, v in latest_prices.items()
-                if not pd.isna(v)
-            }
-        except Exception as e:
-            print(
-                f"Warning: yfinance fetch failed, falling back to mock prices: {e}"
-            )
-            prices = {ticker: 100.0 for ticker in self.tickers}
-
-        # Fallback for any individual failed ticker
-        for ticker in self.tickers:
-            if ticker not in prices:
-                prices[ticker] = 100.0
-
-        return prices
+        return self.price_provider.get_prices(self.tickers)
 
     def _initialize_shares(self):
         """Initializes the baseline holdings based on starting prices."""
