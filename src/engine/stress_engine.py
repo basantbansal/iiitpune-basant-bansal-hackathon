@@ -84,7 +84,7 @@ class StressEngine:
         Applies a deterministic credit stress scenario.
         ECL = PD * LGD * EAD
         RWA = EAD * risk_weight
-        CET1 Impact = Stressed ECL / Initial CET1 Capital
+        Simplified CET1 Impact/Burden = Stressed ECL / Initial CET1 Capital. This is NOT a Basel-compliant post-stress CET1 ratio.
         """
         if initial_cet1_capital <= 0:
             raise ValueError("Initial CET1 capital must be positive.")

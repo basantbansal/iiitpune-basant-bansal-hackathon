@@ -1,0 +1,7 @@
+# SYNTHETIC VALIDATION DATA - DETERMINISTIC REPLAY ONLY - NOT REAL FINANCIAL PERFORMANCE
+event_id,event_timestamp,ticker,headline,price_t0,price_t1
+EVT_001,2023-01-10T09:30:00Z,AAPL,Apple announces breakthrough in battery technology,140.00,145.50
+EVT_002,2023-02-15T10:00:00Z,TSLA,Tesla faces massive global recall due to autopilot failure,190.00,175.00
+EVT_003,2023-03-20T08:45:00Z,JPM,JPMorgan posts record quarterly profits exceeding expectations,135.00,142.00
+EVT_004,2023-04-12T14:15:00Z,AMZN,Amazon Web Services suffers extended outage affecting thousands of sites,105.00,99.00
+EVT_005,2023-05-05T11:00:00Z,MSFT,Microsoft acquires leading AI startup to expand enterprise offerings,280.00,295.00
