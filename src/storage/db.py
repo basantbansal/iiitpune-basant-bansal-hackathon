@@ -28,7 +28,6 @@ class SignalDatabase:
     def _init_db(self):
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            # We now only have ONE table that holds everything.
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS risk_signals (
@@ -45,7 +44,84 @@ class SignalDatabase:
                     published_at TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
-            """
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS documents (
+                    document_hash TEXT PRIMARY KEY,
+                    canonical_group_id TEXT,
+                    headline TEXT NOT NULL,
+                    normalized_headline TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    published_at TEXT NOT NULL,
+                    is_duplicate BOOLEAN,
+                    duplicate_reason TEXT,
+                    resolved_entities TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            # FIX 1: Idempotent migration to add document_hash to risk_signals
+            cursor.execute("PRAGMA table_info(risk_signals)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if "document_hash" not in columns:
+                cursor.execute("ALTER TABLE risk_signals ADD COLUMN document_hash TEXT;")
+            
+            # FIX 3: Add index for temporal query
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_published_at ON documents(published_at)"
+            )
+            conn.commit()
+
+    def get_recent_documents(self, hours: int = 24) -> list:
+        """Fetches documents from the last N hours for deduplication."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # In SQLite, datetime('now', '-24 hours') works, but we store ISO8601 strings.
+            # We can use datetime('now', '-24 hours') and compare against published_at directly if they are ISO8601.
+            cursor.execute(
+                """
+                SELECT document_hash, canonical_group_id, normalized_headline, resolved_entities, published_at
+                FROM documents 
+                WHERE published_at >= datetime('now', ?)
+                ORDER BY published_at DESC
+                """, (f'-{hours} hours',)
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "document_hash": r[0],
+                    "canonical_group_id": r[1],
+                    "normalized_headline": r[2],
+                    "resolved_entities": r[3],
+                    "published_at": r[4]
+                } for r in rows
+            ]
+
+    def log_document(self, doc_data: dict):
+        """Saves the document metadata and duplication status."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO documents 
+                (document_hash, canonical_group_id, headline, normalized_headline, source, published_at, is_duplicate, duplicate_reason, resolved_entities, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    doc_data["document_hash"],
+                    doc_data["canonical_group_id"],
+                    doc_data["headline"],
+                    doc_data["normalized_headline"],
+                    doc_data["source"],
+                    doc_data["published_at"],
+                    doc_data["is_duplicate"],
+                    doc_data["duplicate_reason"],
+                    ",".join(doc_data["resolved_entities"]),
+                    now
+                )
             )
             conn.commit()
 
@@ -70,6 +146,7 @@ class SignalDatabase:
         headline: str,
         source: str,
         published_at: str,
+        document_hash: str = None,
     ):
         """Saves the final Risk Engine output to the database."""
         now = datetime.now(timezone.utc).isoformat()
@@ -78,8 +155,8 @@ class SignalDatabase:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO risk_signals 
-                (article_hash, ticker, headline, source, event_type, sentiment, impact, confidence, evidence, model_version, published_at, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (article_hash, ticker, headline, source, event_type, sentiment, impact, confidence, evidence, model_version, published_at, created_at, document_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     article_hash,
@@ -94,6 +171,7 @@ class SignalDatabase:
                     signal_dict.get("model_version", "v1.0"),
                     published_at,
                     now,
+                    document_hash,
                 ),
             )
             conn.commit()

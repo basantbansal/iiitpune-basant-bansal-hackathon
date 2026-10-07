@@ -12,6 +12,7 @@ from src.engine.risk_engine import RiskEngine
 from src.rebalancer.index_rebalancer import IndexRebalancer
 from src.engine.ingestion import MarketNewsIngestion
 from src.storage.db import SignalDatabase
+from src.engine.processor import EntityResolver, SemanticDedup
 
 import sys
 import os
@@ -116,25 +117,65 @@ if execute_live:
             
         new_signals_processed = []
         
+        dedup_engine = SemanticDedup(time_window_hours=24)
+        recent_docs = db.get_recent_documents(hours=24)
+        
+        # Keep track of hashes processed in this batch to avoid duplicates within the same batch
+        batch_doc_hashes = set()
+        
         for item in raw_news:
-            article_hash = db.generate_hash(item["headline"], item["ticker"])
+            raw_headline = item["headline"]
+            norm_headline = EntityResolver.normalize_text(raw_headline)
+            doc_hash = SemanticDedup.get_document_hash(norm_headline)
             
-            if not db.is_article_processed(article_hash):
-                sig = risk_engine.analyze(
-                    text=item["headline"], 
-                    entity=item["ticker"]
-                )
-                sig_dict = sig.to_dict()
-                
-                db.log_signal(
-                    article_hash=article_hash,
-                    signal_dict=sig_dict,
-                    headline=item["headline"],
-                    source=item["source"],
-                    published_at=item["published_at"]
-                )
-                
-                new_signals_processed.append(sig_dict)
+            if doc_hash in batch_doc_hashes:
+                continue
+            batch_doc_hashes.add(doc_hash)
+            
+            # Resolve entities
+            resolved = EntityResolver.resolve_entities(raw_headline)
+            entities = {r.ticker for r in resolved}
+            
+            # Semantic deduplication
+            dedup_result = dedup_engine.check_duplicate(norm_headline, entities, recent_docs)
+            
+            doc_data = {
+                "document_hash": doc_hash,
+                "canonical_group_id": dedup_result["canonical_group_id"],
+                "headline": raw_headline,
+                "normalized_headline": norm_headline,
+                "source": item["source"],
+                "published_at": item["published_at"],
+                "is_duplicate": dedup_result["is_duplicate"],
+                "duplicate_reason": dedup_result["reason"],
+                "resolved_entities": list(entities)
+            }
+            
+            db.log_document(doc_data)
+            recent_docs.insert(0, doc_data)  # Update recent docs for next items
+            
+            if not dedup_result["is_duplicate"]:
+                for entity in entities:
+                    # Maintain exact duplicate protection for the signal table via article_hash
+                    article_hash = db.generate_hash(raw_headline, entity)
+                    
+                    if not db.is_article_processed(article_hash):
+                        sig = risk_engine.analyze(
+                            text=raw_headline, 
+                            entity=entity
+                        )
+                        sig_dict = sig.to_dict()
+                        
+                        db.log_signal(
+                            article_hash=article_hash,
+                            signal_dict=sig_dict,
+                            headline=raw_headline,
+                            source=item["source"],
+                            published_at=item["published_at"],
+                            document_hash=doc_hash
+                        )
+                        
+                        new_signals_processed.append(sig_dict)
 
     if new_signals_processed:
         st.success(f"Processed {len(new_signals_processed)} new actionable market events.")
