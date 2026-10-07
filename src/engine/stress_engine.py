@@ -1,3 +1,5 @@
+from typing import List, Dict
+from src.engine.schemas import CreditExposure, CreditStressResult
 import pandas as pd
 
 class StressEngine:
@@ -69,3 +71,81 @@ class StressEngine:
             })
             
         return pd.DataFrame(results)
+
+    def apply_credit_stress(
+        self,
+        exposures: List[CreditExposure],
+        pd_multiplier: float,
+        lgd_multiplier: float,
+        initial_cet1_capital: float,
+        exposure_multiplier: float = 1.0
+    ) -> List[CreditStressResult]:
+        """
+        Applies a deterministic credit stress scenario.
+        ECL = PD * LGD * EAD
+        RWA = EAD * risk_weight
+        CET1 Impact = Stressed ECL / Initial CET1 Capital
+        """
+        if initial_cet1_capital <= 0:
+            raise ValueError("Initial CET1 capital must be positive.")
+        if pd_multiplier < 0 or lgd_multiplier < 0 or exposure_multiplier < 0:
+            raise ValueError("Multipliers cannot be negative.")
+
+        results = []
+        for exp in exposures:
+            baseline_ecl = exp.pd * exp.lgd * exp.ead
+
+            # Stressed parameters (probabilities capped at 1.0)
+            stressed_pd = min(1.0, exp.pd * pd_multiplier)
+            stressed_lgd = min(1.0, exp.lgd * lgd_multiplier)
+            stressed_ead = exp.ead * exposure_multiplier
+
+            stressed_ecl = stressed_pd * stressed_lgd * stressed_ead
+            incremental_ecl = stressed_ecl - baseline_ecl
+
+            # RWA approximation
+            rwa = stressed_ead * exp.risk_weight
+
+            # CET1 impact
+            cet1_impact = stressed_ecl / initial_cet1_capital
+
+            results.append(CreditStressResult(
+                identifier=exp.identifier,
+                baseline_pd=exp.pd,
+                stressed_pd=stressed_pd,
+                baseline_lgd=exp.lgd,
+                stressed_lgd=stressed_lgd,
+                ead=stressed_ead,
+                risk_weight=exp.risk_weight,
+                baseline_ecl=baseline_ecl,
+                stressed_ecl=stressed_ecl,
+                incremental_ecl=incremental_ecl,
+                rwa=rwa,
+                cet1_impact=cet1_impact
+            ))
+
+        return results
+
+    def aggregate_credit_portfolio(self, results: List[CreditStressResult], initial_cet1_capital: float) -> Dict[str, float]:
+        """
+        Aggregates individual credit stress results into portfolio-level metrics.
+        """
+        if initial_cet1_capital <= 0:
+            raise ValueError("Initial CET1 capital must be positive.")
+
+        total_ead = sum(r.ead for r in results)
+        total_baseline_ecl = sum(r.baseline_ecl for r in results)
+        total_stressed_ecl = sum(r.stressed_ecl for r in results)
+        total_incremental_ecl = sum(r.incremental_ecl for r in results)
+        total_rwa = sum(r.rwa for r in results)
+
+        cet1_impact = total_stressed_ecl / initial_cet1_capital
+
+        return {
+            "total_ead": total_ead,
+            "total_baseline_ecl": total_baseline_ecl,
+            "total_stressed_ecl": total_stressed_ecl,
+            "total_incremental_ecl": total_incremental_ecl,
+            "total_rwa": total_rwa,
+            "cet1_impact": cet1_impact
+        }
