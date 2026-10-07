@@ -235,3 +235,115 @@ def test_t0_execution_and_t1_isolation(mock_risk_engine_class, dummy_csv_data):
 
     # The baseline P&L must also change
     assert metrics_1["events_results"][0]["baseline_pnl"] != metrics_2["events_results"][0]["baseline_pnl"]
+
+@patch("src.validation.backtest.RiskEngine")
+def test_execution_cost_metrics(mock_risk_engine_class, dummy_csv_data):
+    # A. ZERO-TRADE CASE
+    mock_engine = MagicMock()
+    from src.engine.schemas import RiskSignal
+
+    # Return neutral signal (score 0.0) -> no trade
+    mock_engine.analyze.return_value = RiskSignal(
+        entity="MSFT", headline="dummy", sentiment_score=0.0,
+        event_classification="Market Sentiment", impact_score=0,
+        confidence=0.9, evidence_span="dummy"
+    )
+    mock_risk_engine_class.return_value = mock_engine
+
+    import tempfile, csv, os
+    fd, path = tempfile.mkstemp(suffix=".csv")
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+        f.write("event_id,event_timestamp,ticker,headline,price_t0,price_t1\n")
+        writer = csv.DictWriter(f, fieldnames=["event_id", "event_timestamp", "ticker", "headline", "price_t0", "price_t1"])
+        writer.writerows([dummy_csv_data[1]])  # Just MSFT
+
+    tester = HistoricalBacktester(data_path=path)
+    metrics = tester.run_backtest()
+    res = metrics["events_results"][0]
+
+    assert res["total_abs_trade_value"] == 0.0
+    assert res["turnover"] == 0.0
+    assert res["turnover_pct"] == 0.0
+    assert res["transaction_cost"] == 0.0
+
+    # Now test with a non-zero signal
+    mock_engine.analyze.return_value = RiskSignal(
+        entity="MSFT", headline="dummy", sentiment_score=1.0,
+        event_classification="Market Sentiment", impact_score=10,
+        confidence=0.9, evidence_span="dummy"
+    )
+
+    tester = HistoricalBacktester(data_path=path)
+    metrics = tester.run_backtest()
+    res = metrics["events_results"][0]
+
+    # B. TURNOVER MATH
+    # C. TRANSACTION COST MATH
+    # D. NET P&L MATH
+    # E. INCREMENTAL NET P&L
+
+    assert res["total_abs_trade_value"] > 0.0
+
+    # turnover == 0.5 * total_abs_trade_value / initial_capital (which is 1000000)
+    expected_turnover = 0.5 * res["total_abs_trade_value"] / 1000000.0
+    assert res["turnover"] == pytest.approx(expected_turnover)
+
+    expected_txn_cost = res["total_abs_trade_value"] * tester.txn_cost_rate
+    assert res["transaction_cost"] == pytest.approx(expected_txn_cost)
+
+    assert res["net_rebalanced_pnl"] == pytest.approx(res["gross_rebalanced_pnl"] - res["transaction_cost"])
+    assert res["incremental_net_pnl"] == pytest.approx(res["incremental_gross_pnl"] - res["transaction_cost"])
+
+    os.remove(path)
+
+@patch("src.validation.backtest.RiskEngine")
+def test_t1_isolation_and_cost_rate_sensitivity(mock_risk_engine_class, dummy_csv_data):
+    mock_engine = MagicMock()
+    from src.engine.schemas import RiskSignal
+    mock_engine.analyze.return_value = RiskSignal(
+        entity="MSFT", headline="dummy", sentiment_score=1.0,
+        event_classification="Market Sentiment", impact_score=10,
+        confidence=0.9, evidence_span="dummy"
+    )
+    mock_risk_engine_class.return_value = mock_engine
+
+    import tempfile, csv, os
+
+    def run_tester(t1_price, txn_cost_rate):
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write("event_id,event_timestamp,ticker,headline,price_t0,price_t1\n")
+            writer = csv.DictWriter(f, fieldnames=["event_id", "event_timestamp", "ticker", "headline", "price_t0", "price_t1"])
+            d = dict(dummy_csv_data[1])
+            d["price_t1"] = str(t1_price)
+            writer.writerows([d])
+        tester = HistoricalBacktester(data_path=path, txn_cost_rate=txn_cost_rate)
+        metrics = tester.run_backtest()
+        os.remove(path)
+        return metrics["events_results"][0]
+
+    # F. T1 ISOLATION
+    res_1 = run_tester(260.0, 0.0010)
+    res_2 = run_tester(300.0, 0.0010)
+
+    assert res_1["turnover_pct"] == res_2["turnover_pct"]
+    assert res_1["transaction_cost"] == res_2["transaction_cost"]
+    assert res_1["total_abs_trade_value"] == res_2["total_abs_trade_value"]
+
+    # G. COST-RATE SENSITIVITY
+    res_3 = run_tester(260.0, 0.0020)
+
+    # gross P&L is unchanged
+    assert res_1["gross_rebalanced_pnl"] == res_3["gross_rebalanced_pnl"]
+
+    # transaction cost changes proportionally
+    assert res_3["transaction_cost"] == pytest.approx(res_1["transaction_cost"] * 2.0)
+
+    # net P&L changes accordingly
+    assert res_3["net_rebalanced_pnl"] == pytest.approx(res_3["gross_rebalanced_pnl"] - res_3["transaction_cost"])
+
+    # H. DETERMINISM
+    res_4 = run_tester(260.0, 0.0010)
+    assert res_1["turnover"] == res_4["turnover"]
+    assert res_1["transaction_cost"] == res_4["transaction_cost"]
+    assert res_1["gross_rebalanced_pnl"] == res_4["gross_rebalanced_pnl"]

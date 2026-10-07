@@ -26,8 +26,9 @@ class HistoricalBacktester:
     guaranteeing no look-ahead bias by only passing headlines to the Risk Engine.
     """
 
-    def __init__(self, data_path: str = "data/historical_backtest.csv"):
+    def __init__(self, data_path: str = "data/historical_backtest.csv", txn_cost_rate: float = 0.0010):
         self.data_path = data_path
+        self.txn_cost_rate = txn_cost_rate
         self.risk_engine = RiskEngine()
         # Base reference prices for non-event tickers
         base_pp = PriceProvider()
@@ -94,11 +95,20 @@ class HistoricalBacktester:
 
             # 4. Execute existing Module A rebalance
             # Pass signal to rebalancer
-            _ = rebalancer.rebalance([signal.to_dict()])
+            orders_df = rebalancer.rebalance([signal.to_dict()])
+
+            if not orders_df.empty and "Trade Value ($)" in orders_df.columns:
+                total_abs_trade_value = float(orders_df["Trade Value ($)"].abs().sum())
+            else:
+                total_abs_trade_value = 0.0
 
             # 5. Capture the resulting portfolio/share state
             rebalanced_shares = rebalancer.current_shares
             rebalanced_value_t0 = rebalancer.initial_capital
+
+            turnover = (0.5 * total_abs_trade_value / rebalanced_value_t0) if rebalanced_value_t0 > 0 else 0.0
+            turnover_pct = turnover * 100.0
+            transaction_cost = total_abs_trade_value * self.txn_cost_rate
 
             # 6. ONLY NOW use price_t1 for mark-to-market
             t1_prices = t0_prices.copy()
@@ -111,6 +121,12 @@ class HistoricalBacktester:
             baseline_pnl = baseline_value_t1 - baseline_value_t0
             rebalanced_pnl = rebalanced_value_t1 - rebalanced_value_t0
             incremental_pnl = rebalanced_pnl - baseline_pnl
+
+            gross_rebalanced_pnl = rebalanced_pnl
+            net_rebalanced_pnl = gross_rebalanced_pnl - transaction_cost
+
+            incremental_gross_pnl = incremental_pnl
+            incremental_net_pnl = net_rebalanced_pnl - baseline_pnl
 
             baseline_return_pct = (baseline_pnl / baseline_value_t0) * 100
             rebalanced_return_pct = (rebalanced_pnl / rebalanced_value_t0) * 100
@@ -141,7 +157,16 @@ class HistoricalBacktester:
                 "rebalanced_pnl": rebalanced_pnl,
                 "incremental_pnl": incremental_pnl,
                 "baseline_return_pct": baseline_return_pct,
-                "rebalanced_return_pct": rebalanced_return_pct
+                "rebalanced_return_pct": rebalanced_return_pct,
+                "total_abs_trade_value": total_abs_trade_value,
+                "turnover": turnover,
+                "turnover_pct": turnover_pct,
+                "transaction_cost": transaction_cost,
+                "txn_cost_rate": self.txn_cost_rate,
+                "gross_rebalanced_pnl": gross_rebalanced_pnl,
+                "net_rebalanced_pnl": net_rebalanced_pnl,
+                "incremental_gross_pnl": incremental_gross_pnl,
+                "incremental_net_pnl": incremental_net_pnl
             })
 
         directional_accuracy = (correct_direction / total_events * 100) if total_events > 0 else 0.0
@@ -159,7 +184,7 @@ class HistoricalBacktester:
             "total_incremental_pnl": total_incremental_pnl,
             "events_results": results,
             "disclaimer": "This is a deterministic offline replay using synthetic validation data. It demonstrates pipeline mechanics only and is NOT evidence of real-world investment performance, guaranteed returns, or alpha.",
-            "costs_note": "Results are gross of transaction costs, slippage, and execution latency."
+            "costs_note": "Results are net of a synthetic configurable 10 bps transaction cost where net metrics are shown. Results remain gross of slippage and execution latency."
         }
 
         logger.info(f"Backtest complete. Directional Accuracy: {directional_accuracy:.1f}%. Total Incremental P&L: ${total_incremental_pnl:,.2f}")
