@@ -80,7 +80,7 @@ def test_metrics_calculation(temp_csv_file):
     assert "directional_accuracy_pct" in metrics
     assert "average_forward_return_pct" in metrics
     assert "disclaimer" in metrics
-    assert "NOT indicative" in metrics["disclaimer"]
+    assert "NOT evidence" in metrics["disclaimer"]
 
 import math
 
@@ -130,3 +130,108 @@ def test_signal_return_direction(temp_csv_file):
     forward_return_2 = (events[1].price_t1 - events[1].price_t0) / events[1].price_t0
     assert forward_return_2 == pytest.approx(0.033333333)
 
+
+# --- MODULE A REPLAY TESTS ---
+
+@patch("src.validation.backtest.RiskEngine")
+def test_replay_state_isolation_and_determinism(mock_risk_engine_class, temp_csv_file):
+    # Mock Risk Engine to always return a deterministic signal
+    mock_engine = MagicMock()
+    from src.engine.schemas import RiskSignal
+    mock_engine.analyze.return_value = RiskSignal(
+        entity="DUMMY", headline="dummy", sentiment_score=1.0,
+        event_classification="Earnings & Financials", impact_score=10,
+        confidence=1.0, evidence_span="dummy"
+    )
+    mock_risk_engine_class.return_value = mock_engine
+
+    tester = HistoricalBacktester(data_path=temp_csv_file)
+    metrics_run_1 = tester.run_backtest()
+    metrics_run_2 = tester.run_backtest()
+
+    # G. Determinism: Running the same events twice produces identical results
+    assert metrics_run_1["total_incremental_pnl"] == metrics_run_2["total_incremental_pnl"]
+
+    # E. State isolation:
+    # If state leaked, the second event in the CSV would inherit the rebalanced weights
+    # from the first event rather than starting from the equal-weight baseline.
+    # Since we instantiate a fresh IndexRebalancer per event, they must not leak.
+    # We prove this by ensuring determinism holds on repeated full runs (the second run
+    # would compound wildly if state leaked across the whole HistoricalBacktester).
+
+@patch("src.validation.backtest.RiskEngine")
+def test_replay_portfolio_mathematics(mock_risk_engine_class, temp_csv_file):
+    # F. P&L verification & C. Baseline & D. Rebalanced
+    mock_engine = MagicMock()
+    from src.engine.schemas import RiskSignal
+
+    def fake_analyze(text, entity, **kwargs):
+        # Return positive signal for MSFT, negative for AAPL
+        score = 1.0 if entity == "MSFT" else -1.0
+        return RiskSignal(
+            entity=entity, headline=text, sentiment_score=score,
+            event_classification="Market Sentiment", impact_score=10,
+            confidence=0.9, evidence_span="dummy"
+        )
+    mock_engine.analyze.side_effect = fake_analyze
+    mock_risk_engine_class.return_value = mock_engine
+
+    tester = HistoricalBacktester(data_path=temp_csv_file)
+    metrics = tester.run_backtest()
+    results = metrics["events_results"]
+
+    assert len(results) == 2
+    msft_res = next(r for r in results if r["ticker"] == "MSFT")
+
+    # MSFT event: price_t0 = 250.0, price_t1 = 260.0
+    # Baseline: 1,000,000 / 10 = 100,000 per stock at T0.
+    # Shares of MSFT = 100,000 / 250 = 400 shares.
+    # T1 value of MSFT = 400 * 260 = 104,000.
+    # Baseline P&L = +4,000.
+    assert msft_res["baseline_pnl"] == pytest.approx(4000.0)
+
+    # Rebalanced MSFT: positive signal -> higher weight than 10%.
+    # Therefore rebalanced_pnl should be > 4000.0.
+    assert msft_res["rebalanced_pnl"] > 4000.0
+    assert msft_res["incremental_pnl"] > 0.0
+
+@patch("src.validation.backtest.RiskEngine")
+def test_t0_execution_and_t1_isolation(mock_risk_engine_class, dummy_csv_data):
+    # A. T0 execution & B. T1 marking
+    mock_engine = MagicMock()
+    from src.engine.schemas import RiskSignal
+    mock_engine.analyze.return_value = RiskSignal(
+        entity="MSFT", headline="dummy", sentiment_score=1.0,
+        event_classification="Market Sentiment", impact_score=10,
+        confidence=0.9, evidence_span="dummy"
+    )
+    mock_risk_engine_class.return_value = mock_engine
+
+    # Create two datasets identical except for price_t1
+    data_1 = [dict(dummy_csv_data[1])]
+    data_1[0]["price_t1"] = "260.0"  # Original +10
+
+    data_2 = [dict(dummy_csv_data[1])]
+    data_2[0]["price_t1"] = "300.0"  # Huge +50
+
+    import tempfile, csv, os
+
+    def run_with_data(d):
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write("event_id,event_timestamp,ticker,headline,price_t0,price_t1\n")
+            writer = csv.DictWriter(f, fieldnames=["event_id", "event_timestamp", "ticker", "headline", "price_t0", "price_t1"])
+            writer.writerows(d)
+        tester = HistoricalBacktester(data_path=path)
+        res = tester.run_backtest()
+        os.remove(path)
+        return res
+
+    metrics_1 = run_with_data(data_1)
+    metrics_2 = run_with_data(data_2)
+
+    # The incremental P&L MUST change because T1 mark-to-market changed
+    assert metrics_1["total_incremental_pnl"] != metrics_2["total_incremental_pnl"]
+
+    # The baseline P&L must also change
+    assert metrics_1["events_results"][0]["baseline_pnl"] != metrics_2["events_results"][0]["baseline_pnl"]
