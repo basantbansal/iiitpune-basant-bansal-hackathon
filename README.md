@@ -16,7 +16,7 @@ The application pipeline operates through the following stages:
 1. **Ingestion:** Fetches live headlines via Google News RSS or loads synthetic data in offline "Crisis Replay" mode.
 2. **Entity Resolution & Semantic Deduplication:** Normalizes ticker symbols and prevents identical event duplication via a local SQLite database using article hashes.
 3. **Risk Engine:** Computes sentiment, impact, and confidence scores. Operates in a hybrid mode: an optional LLM path via Groq, or a fully offline fallback using a local TF-IDF + Logistic Regression NLP model.
-4. **Module A (Tactical Index Rebalancer):** Uses risk signals alongside deterministic reference prices to dynamically shift asset weights via simplex projection.
+4. **Module A (Tactical Index Rebalancer):** Uses risk signals alongside deterministic reference prices to dynamically shift asset weights via constrained weight tilting, clipping, and normalization.
 5. **Module B (Stress Engine):** Performs predefined cross-asset sensitivity and contagion risk analysis based on historical/synthetic beta and correlation matrices.
 6. **Visualization:** A Streamlit dashboard presents the execution ticket, risk radar, and strategic stress scenarios.
 
@@ -31,7 +31,7 @@ The application pipeline operates through the following stages:
 ### `data/all-data.csv` (4,845 rows)
 - **Nature:** Unstructured text with sentiment labels (sentiment, sentence).
 - **Purpose:** Used strictly to train the offline TF-IDF + Logistic Regression fallback NLP model.
-- **Source:** The repository currently does not preserve authoritative provenance metadata for this file. The file is bundled locally and is used only for training the offline fallback NLP model. Its structure resembles the FinancialPhraseBank dataset, but this repository does not claim that provenance without verification.
+- **Source:** The repository currently does not preserve authoritative provenance metadata for this file. The file is bundled locally and is used only for training the offline fallback NLP model.
 
 ### `data/sample_news.json` (5 records)
 - **Nature:** Synthetic/mock replay data.
@@ -91,7 +91,9 @@ By decoupling portfolio rebalancing from traditional price-lagged indicators and
 ├── docs/                   # Presentation and architecture diagrams
 ├── data/
 │   ├── all-data.csv            # NLP training data
+│   ├── historical_backtest.csv # Synthetic validation dataset
 │   ├── sample_news.json        # Offline replay mock data
+│   ├── synthetic_credit_portfolio.json # Synthetic loan exposures
 │   ├── reference_prices.json   # Deterministic reference prices
 │   └── risk_data.db            # Local runtime SQLite database
 ├── src/
