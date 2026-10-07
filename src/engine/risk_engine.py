@@ -85,7 +85,8 @@ class RiskEngine:
         evidence = ", ".join(set(matched_spans[:3]))
         return top_event, confidence, evidence
 
-    def analyze(self, text: str, entity: str = "GENERAL", age_hours: float = 0.0, groq_api_key: str = None) -> RiskSignal: # this is the main function that analyzes the text and returns a RiskSignal object
+    def analyze(self, text: str, entity: str = "GENERAL", age_hours: float = 0.0) -> RiskSignal: # this is the main function that analyzes the text and returns a RiskSignal object
+        groq_api_key = os.environ.get("GROQ_API_KEY")
         
         # 1. Base Local Processing
         event_type, event_conf, evidence = self._classify_event_local(text)

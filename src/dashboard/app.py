@@ -48,13 +48,12 @@ rebalancer = st.session_state.rebalancer
 # --- Sidebar Controls ---
 st.sidebar.header("System Configuration")
 data_mode = st.sidebar.radio("Data Source Mode", ["Live Market (Google RSS)", "Offline Crisis Replay"])
-env_groq_key = os.getenv("GROQ_API_KEY", "")
+groq_api_key = os.getenv("GROQ_API_KEY", "")
 
-groq_api_key = st.sidebar.text_input(
-    "Groq API Key (Optional Hybrid LLM)", 
-    type="password", 
-    value=env_groq_key  # <--- This automatically fills the password box
-)
+if groq_api_key:
+    st.sidebar.success("LLM: Available")
+else:
+    st.sidebar.info("LLM: Local fallback")
 
 
 st.sidebar.markdown("---")
@@ -123,8 +122,7 @@ if execute_live:
             if not db.is_article_processed(article_hash):
                 sig = risk_engine.analyze(
                     text=item["headline"], 
-                    entity=item["ticker"],
-                    groq_api_key=groq_api_key if groq_api_key else None
+                    entity=item["ticker"]
                 )
                 sig_dict = sig.to_dict()
                 
