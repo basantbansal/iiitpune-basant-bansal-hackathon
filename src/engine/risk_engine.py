@@ -1,5 +1,6 @@
 import os
 import re
+import json
 from typing import Tuple
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -9,10 +10,9 @@ from sklearn.pipeline import make_pipeline
 try:
     from groq import Groq
 except ImportError:
-    Groq = None  # Graceful fallback if Groq is not installed
+    Groq = None
 
 from src.engine.schemas import RiskSignal
-
 
 class RiskEngine:
     def __init__(self, dataset_path: str = "data/all-data.csv"):
@@ -20,69 +20,57 @@ class RiskEngine:
             "Credit Event": 9.0,
             "Geopolitical": 8.0,
             "Macroeconomic": 7.5,
-            "Earnings & Financials": 6.0,  # Added to fix the MSFT bug
+            "Earnings & Financials": 6.0,
             "Merger and Acquisition": 5.5,
             "Product Launch": 3.5,
+            "Market Sentiment": 4.0,  # Added for generic stock movements
         }
 
         self.event_patterns = {
-            "Credit Event": [
-                r"\bdefault\b", r"\bdowngrade\b", r"\bbankruptcy\b",
-                r"\binsolven\w*\b", r"\bdebt\b", r"\blawsuit\b",
-            ],
-            "Geopolitical": [
-                r"\bwar\b", r"\bsanctions?\b", r"\btariff\b",
-                r"\bgeopolitical\b", r"\bconflict\b", r"\btrade war\b",
-            ],
-            "Macroeconomic": [
-                r"\binflation\b", r"\bcpi\b", r"\bfed\b",
-                r"\brates?\b", r"\bgdp\b", r"\brecession\b", r"\byield\b",
-            ],
-            "Earnings & Financials": [
-                r"\bearnings\b", r"\brevenue\b", r"\bprofits?\b",
-                r"\bbeats?\b", r"\bguidance\b", r"\bestimates\b", r"\bcloud\b",
-            ],
-            "Merger and Acquisition": [
-                r"\bacquir\w*\b", r"\bmerger\b", r"\bbuyout\b",
-                r"\btakeover\b", r"\bdeal\b",
-            ],
-            "Product Launch": [
-                r"\blaunch\w*\b", r"\bunveil\w*\b", r"\bannounc\w*\b",
-                r"\breleas\w*\b", r"\brollout\b",
-            ],
+            "Credit Event": [r"\bdefault\b", r"\bdowngrade\b", r"\bbankruptcy\b", r"\bdebt\b"],
+            "Geopolitical": [r"\bwar\b", r"\btariff\b", r"\bconflict\b", r"\bsanctions\b"],
+            "Macroeconomic": [r"\binflation\b", r"\bfed\b", r"\brates?\b", r"\beconomy\b", r"\bcpi\b"],
+            "Earnings & Financials": [r"\bearnings\b", r"\brevenue\b", r"\bprofits?\b", r"\bdividend\b", r"\bbeats?\b"],
+            "Merger and Acquisition": [r"\bacquir\w*\b", r"\bmerger\b", r"\bbuyout\b", r"\btakeover\b"],
+            "Product Launch": [r"\blaunch\w*\b", r"\bannounc\w*\b", r"\breleas\w*\b", r"\bunveil\b"],
+            "Market Sentiment": [r"\bupgrade\b", r"\btarget\b", r"\bupside\b", r"\bbull\b", r"\bbear\b", r"\bstock\b", r"\bjump\b", r"\bdrop\b"]
         }
 
         self.model = self._train_model(dataset_path)
 
     def _train_model(self, path: str):
-        """Trains the fast ML pipeline if the Kaggle dataset is present."""
+        """Robust loader for the Kaggle dataset."""
         if os.path.exists(path):
             try:
-                df = pd.read_csv(
-                    path, names=["sentiment", "headline"], encoding="latin-1"
-                )
-                pipeline = make_pipeline(
-                    TfidfVectorizer(
-                        stop_words="english",
-                        ngram_range=(1, 2),
-                        max_features=4000,
-                    ),
+                # Read without assuming headers to avoid misalignment
+                df = pd.read_csv(path, encoding="latin-1", header=None)
+                
+                # If the first row contains the column names, drop it
+                if str(df.iloc[0, 0]).lower() == 'sentiment':
+                    df = df.iloc[1:].reset_index(drop=True)
+                    
+                # Force only the first two columns
+                df = df.iloc[:, :2]
+                df.columns = ["sentiment", "headline"] 
+                
+                pipeline = make_pipeline( # here 
+                    TfidfVectorizer(stop_words="english", ngram_range=(1, 2), max_features=4000),
                     LogisticRegression(max_iter=1000, class_weight="balanced"),
                 )
                 pipeline.fit(df["headline"], df["sentiment"])
                 return pipeline
             except Exception as e:
-                print(f"Warning: ML model training failed ({e}). Using lexicon fallback.")
+                print(f"ML Model Training Warning: {e}. Falling back to lexicon & LLM.")
                 return None
         return None
 
-    def _classify_event(self, text: str) -> Tuple[str, float, str]:
-        """Maps text to a specific event taxonomy and extracts evidence."""
+    def _classify_event_local(self, text: str) -> Tuple[str, float, str]: # this is used to classify the event type using regex patterns if Groq is unavailable
+        """Regex fallback if Groq is unavailable."""
         lower = text.lower()
         matches = {}
         matched_spans = []
 
-        for category, patterns in self.event_patterns.items():
+        for category, patterns in self.event_patterns.items(): # 
             for p in patterns:
                 m = re.search(p, lower)
                 if m:
@@ -90,67 +78,72 @@ class RiskEngine:
                     matched_spans.append(m.group(0))
 
         if not matches:
-            return "Macroeconomic", 0.50, "General Market Context"
+            return "Market Sentiment", 0.40, "General Market Context"
 
         top_event = max(matches, key=matches.get)
-        confidence = min(0.95, 0.60 + 0.12 * matches[top_event])
+        confidence = min(0.95, 0.50 + 0.15 * matches[top_event]) 
         evidence = ", ".join(set(matched_spans[:3]))
         return top_event, confidence, evidence
 
-    def analyze(
-        self, 
-        text: str, 
-        entity: str = "GENERAL", 
-        age_hours: float = 0.0, 
-        groq_api_key: str = None
-    ) -> RiskSignal:
+    def analyze(self, text: str, entity: str = "GENERAL", age_hours: float = 0.0, groq_api_key: str = None) -> RiskSignal: # this is the main function that analyzes the text and returns a RiskSignal object
         
-        # 1. Base Local Sentiment (-1.0 to 1.0)
+        # 1. Base Local Processing
+        event_type, event_conf, evidence = self._classify_event_local(text)
+        
         local_sentiment = 0.0
         if self.model:
-            probs = self.model.predict_proba([text])[0]
-            prob_dict = dict(zip(self.model.classes_, probs))
-            local_sentiment = prob_dict.get("positive", 0.0) - prob_dict.get("negative", 0.0)
-        else:
-            # Enhanced lexicon to catch MSFT earnings beats
-            pos = len(re.findall(r"\b(surge|jump|soar|beat|beats|profit|profits|gain|rally|breakthrough)\b", text.lower()))
-            neg = len(re.findall(r"\b(drop|fall|plunge|miss|loss|slump|default|probe|fraud)\b", text.lower()))
-            local_sentiment = ((pos - neg) / max(1, pos + neg)) if (pos + neg) > 0 else 0.0
-
+            try:
+                probs = self.model.predict_proba([text])[0]
+                prob_dict = dict(zip(self.model.classes_, probs))
+                # Handle Kaggle's text labels: 'positive', 'negative'
+                pos = prob_dict.get("positive", 0.0)
+                neg = prob_dict.get("negative", 0.0)
+                local_sentiment = pos - neg
+            except Exception:
+                pass
+                
         sentiment_score = local_sentiment
 
-        # 2. Event Classification & Evidence Extraction
-        event_type, event_conf, evidence = self._classify_event(text)
-
-        # 3. GROQ HYBRID ENSEMBLE (Triggers only if API key is passed)
-        if groq_api_key and Groq is not None:
+        # 2. GROQ HYBRID ENSEMBLE (Structured JSON Extraction)
+        model_used = "risk-engine-v1.0-deterministic"
+        
+        if groq_api_key and Groq is not None: 
             try:
                 client = Groq(api_key=groq_api_key)
                 prompt = f"""
-                Analyze this financial headline for {entity}: "{text}"
-                Return ONLY a float between -1.0 (highly negative) and 1.0 (highly positive).
+                Analyze this financial headline for the asset {entity}: "{text}"
+                Classify the event into exactly one of these categories: Credit Event, Geopolitical, Macroeconomic, Earnings & Financials, Merger and Acquisition, Product Launch, Market Sentiment.
+                Provide a sentiment score between -1.0 (highly negative) and 1.0 (highly positive).
+                Extract a 2-5 word evidence snippet from the headline.
+                
+                Respond ONLY with a valid JSON object in this exact format:
+                {{"sentiment": 0.85, "event_type": "Earnings & Financials", "evidence": "record quarterly profits"}}
                 """
+                
                 completion = client.chat.completions.create(
                     model="llama3-8b-8192",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
-                    max_tokens=10
+                    response_format={"type": "json_object"} # Forces LLaMA to return valid JSON
                 )
+                raw_content = completion.choices[0].message.content.strip()
+                raw_content = raw_content.replace("```json", "").replace("```", "").strip()
                 
-                groq_response = completion.choices[0].message.content.strip()
-                match = re.search(r'-?\d+\.\d+', groq_response)
-                if match:
-                    groq_sentiment = float(match.group())
-                    # Average the local ML model with the Groq LLM
-                    sentiment_score = (local_sentiment + groq_sentiment) / 2.0
-                    # Boost confidence due to dual-model corroboration
-                    event_conf = min(0.99, event_conf + 0.15) 
+                groq_data = json.loads(raw_content)
+                
+                # Override local metrics with the much smarter LLM metrics
+                sentiment_score = float(groq_data.get("sentiment", local_sentiment))
+                event_type = groq_data.get("event_type", event_type)
+                evidence = groq_data.get("evidence", evidence)
+                event_conf = 0.90 # High confidence due to LLM reasoning
+                model_used = "ensemble-groq-llama3-json"
+                
             except Exception as e:
-                print(f"Groq API failed, falling back to local ML: {e}")
+                print(f"Groq API fallback triggered: {e}")
 
         sentiment_score = round(float(sentiment_score), 4)
 
-        # 4. Multi-Factor Impact Score (1 to 10)
+        # 3. Multi-Factor Impact Score (1 to 10)
         base = self.base_severities.get(event_type, 4.0)
         raw_impact = (
             0.35 * base
@@ -158,7 +151,7 @@ class RiskEngine:
             + 0.30 * (event_conf * 10)
         )
         
-        # 5. TIME DECAY (Half-life of 24 hours)
+        # 4. Time Decay
         decay_factor = (0.5 ** (age_hours / 24.0)) 
         raw_impact *= decay_factor
 
@@ -172,5 +165,5 @@ class RiskEngine:
             impact_score=impact_score,
             confidence=round(event_conf, 2),
             evidence_span=evidence,
-            model_version="ensemble-groq-local-v2.0" if groq_api_key else "risk-engine-v1.0-deterministic"
+            model_version=model_used
         )

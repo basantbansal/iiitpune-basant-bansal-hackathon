@@ -17,6 +17,8 @@ import sys
 import os
 from dotenv import load_dotenv
 
+from src.engine.stress_engine import StressEngine
+
 # Load environment variables from .egroq_api_keynv file
 load_dotenv()
 
@@ -30,9 +32,9 @@ st.set_page_config(
 # Initialize engines & DB in session state for persistence
 @st.cache_resource
 def get_core_systems():
-    return RiskEngine(), MarketNewsIngestion(), SignalDatabase()
+    return RiskEngine(), MarketNewsIngestion(), SignalDatabase(), StressEngine()
 
-risk_engine, ingestor, db = get_core_systems()
+risk_engine, ingestor, db, stress_engine = get_core_systems()
 
 if "rebalancer" not in st.session_state:
     st.session_state.rebalancer = IndexRebalancer()
@@ -234,3 +236,70 @@ else:
             for t in rebalancer.tickers
         ])
         st.dataframe(base_df, use_container_width=True, hide_index=True)
+
+# --- Section 3: Strategic Stress Testing (Module B) --- 
+
+st.markdown("---")
+
+# --- Section 3: Strategic Stress Testing (Module B) ---
+st.subheader("⚠️ Strategic Stress Testing (Module B)")
+st.caption("Evaluate portfolio resilience against historical and synthetic macroeconomic shocks.")
+
+col_scen, col_res = st.columns([1, 2.5])
+
+with col_scen:
+    selected_scenario = st.radio("Select Macroeconomic Scenario", list(stress_engine.scenarios.keys()))
+    shock_params = stress_engine.scenarios[selected_scenario]
+    
+    st.markdown("#### Shock Parameters")
+    st.info(shock_params["desc"])
+    st.metric("Broad Equity Market", f"{shock_params['equity_shock']*100}%")
+    st.metric("Interest Rates (DV01)", f"{shock_params['rate_shock_bps']:+} bps")
+    st.metric("Credit Spreads", f"{shock_params['spread_shock_bps']:+} bps")
+    
+    run_stress = st.button("🔥 Run Stress Test", type="primary", use_container_width=True)
+
+with col_res:
+    if run_stress:
+        with st.spinner("Calculating cross-asset sensitivities..."):
+            stress_df = stress_engine.run_scenario(
+                current_weights=rebalancer.current_weights, 
+                total_aum=total_val,  # Using total_val calculated earlier in the script
+                scenario_name=selected_scenario
+            )
+            
+            total_loss = stress_df["Total P&L"].sum()
+            portfolio_drawdown = (total_loss / total_val) * 100
+            
+            # Top-level stress KPIs
+            sk1, sk2, sk3 = st.columns(3)
+            sk1.metric("Pre-Shock AUM", f"${total_val:,.0f}")
+            sk2.metric("Stressed AUM", f"${(total_val + total_loss):,.0f}", f"{total_loss:,.0f}")
+            sk3.metric("Portfolio Drawdown", f"{portfolio_drawdown:.2f}%")
+            
+            st.markdown("#### Asset-Level Exposure & P&L Attribution")
+            
+            # Format for display
+            display_df = stress_df.copy()
+            format_cols = ["Base Exposure", "Equity P&L", "Rate P&L", "Spread P&L", "Total P&L", "Stressed Value"]
+            for c in format_cols:
+                display_df[c] = display_df[c].apply(lambda x: f"${x:,.0f}")
+            display_df["Drawdown (%)"] = display_df["Drawdown (%)"].apply(lambda x: f"{x:.2f}%")
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            # Visualize Drawdown Contribution
+            st.markdown("#### Drawdown Contribution by Asset")
+            fig_stress = go.Figure(go.Bar(
+                x=stress_df["Ticker"],
+                y=stress_df["Drawdown (%)"],
+                marker_color=['#ef4444' if x < 0 else '#22c55e' for x in stress_df["Drawdown (%)"]]
+            ))
+            fig_stress.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Asset Drawdown (%)",
+                font=dict(color="white")
+            )
+            st.plotly_chart(fig_stress, use_container_width=True)
+    else:
+        st.write("Select a scenario on the left and click 'Run Stress Test' to evaluate the current portfolio.")
