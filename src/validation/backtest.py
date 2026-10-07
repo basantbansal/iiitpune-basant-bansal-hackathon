@@ -17,7 +17,7 @@ class HistoricalBacktester:
     def __init__(self, data_path: str = "data/historical_backtest.csv"):
         self.data_path = data_path
         self.risk_engine = RiskEngine()
-        
+
     def load_events(self) -> List[BacktestEvent]:
         events = []
         try:
@@ -37,7 +37,7 @@ class HistoricalBacktester:
         except Exception as e:
             logger.error(f"Failed to load backtest data: {e}")
             raise
-            
+
         # Sort chronologically to ensure no look-ahead bias in processing
         events.sort(key=lambda x: x.event_timestamp)
         return events
@@ -48,45 +48,45 @@ class HistoricalBacktester:
         """
         events = self.load_events()
         results = []
-        
+
         total_events = len(events)
         correct_direction = 0
         sum_forward_return = 0.0
         conditional_returns = {"positive_signal": [], "negative_signal": []}
-        
+
         logger.info(f"Starting deterministic backtest over {total_events} events...")
-        
+
         for event in events:
             # LOOK-AHEAD PROTECTION:
             # We strictly pass only the headline and ticker to the engine.
             # price_t1 is never exposed to the analysis phase.
             signal = self.risk_engine.analyze(text=event.headline, entity=event.ticker)
-            
+
             # Forward return calculation
             forward_return = (event.price_t1 - event.price_t0) / event.price_t0
             sum_forward_return += forward_return
-            
+
             signal_direction = 1 if signal.sentiment_score > 0 else (-1 if signal.sentiment_score < 0 else 0)
             return_direction = 1 if forward_return > 0 else (-1 if forward_return < 0 else 0)
-            
+
             if signal_direction == return_direction and signal_direction != 0:
                 correct_direction += 1
-                
+
             if signal.sentiment_score > 0:
                 conditional_returns["positive_signal"].append(forward_return)
             elif signal.sentiment_score < 0:
                 conditional_returns["negative_signal"].append(forward_return)
-                
+
             results.append({
                 "event_id": event.event_id,
                 "ticker": event.ticker,
                 "sentiment_score": signal.sentiment_score,
                 "forward_return": forward_return
             })
-            
+
         directional_accuracy = (correct_direction / total_events * 100) if total_events > 0 else 0.0
         avg_return = (sum_forward_return / total_events * 100) if total_events > 0 else 0.0
-        
+
         avg_pos_return = (sum(conditional_returns["positive_signal"]) / len(conditional_returns["positive_signal"]) * 100) if conditional_returns["positive_signal"] else 0.0
         avg_neg_return = (sum(conditional_returns["negative_signal"]) / len(conditional_returns["negative_signal"]) * 100) if conditional_returns["negative_signal"] else 0.0
 
@@ -98,7 +98,7 @@ class HistoricalBacktester:
             "avg_conditional_return_negative_signal_pct": avg_neg_return,
             "disclaimer": "This is a deterministic offline validation replay using synthetic data. It is NOT indicative of real-world or guaranteed investment performance."
         }
-        
+
         logger.info(f"Backtest complete. Directional Accuracy: {directional_accuracy:.1f}%")
         return metrics
 
