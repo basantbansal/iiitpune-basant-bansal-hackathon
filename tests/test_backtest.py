@@ -77,7 +77,7 @@ def test_metrics_calculation(temp_csv_file):
     metrics = tester.run_backtest()
 
     assert metrics["total_events"] == 2
-    assert "directional_accuracy_pct" in metrics
+    assert "directional_matching_rate_pct" in metrics
     assert "average_forward_return_pct" in metrics
     assert "disclaimer" in metrics
     assert "NOT evidence" in metrics["disclaimer"]

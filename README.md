@@ -74,7 +74,8 @@ streamlit run src/dashboard/app.py
 *Note: The application can run fully offline in "Offline Crisis Replay" mode if external news or the Groq API are unavailable.*
 
 ## 5. Results & Testing
-- **Testing:** The system includes a comprehensive `pytest` suite ensuring correct functioning of semantic deduplication, risk analysis, and mathematical rebalancing. Currently, 48/48 tests pass successfully.
+- **Testing:** The system includes a comprehensive `pytest` suite ensuring correct functioning of semantic deduplication, risk analysis, and mathematical rebalancing. Currently, 72 tests passing.
+- **Validation:** The `historical_backtest.csv` dataset is synthetic validation data containing exactly 5 synthetic validation events. The replay is an isolated event replay, not a cumulative historical portfolio backtesting simulation. The transaction cost is a synthetic configurable assumption. This validation demonstrates deterministic pipeline mechanics and does NOT establish real-world alpha or predictive power.
 - **Functionality:** The dashboard dynamically allocates capital in response to injected news events and properly handles offline operations without relying on live financial APIs.
 - **Performance:** As a prototype, results are qualitative. The system demonstrates immediate algorithmic adjustment to unstructured text inputs and strict deduplication.
 

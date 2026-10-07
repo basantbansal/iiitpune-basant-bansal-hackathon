@@ -177,17 +177,18 @@ class HistoricalBacktester:
 
         metrics = {
             "total_events": total_events,
-            "directional_accuracy_pct": directional_accuracy,
+            "directional_matching_rate_pct": directional_accuracy,
             "average_forward_return_pct": avg_return,
             "avg_conditional_return_positive_signal_pct": avg_pos_return,
             "avg_conditional_return_negative_signal_pct": avg_neg_return,
             "total_incremental_pnl": total_incremental_pnl,
             "events_results": results,
+            "directional_matching_note": "Directional Matching Rate measures the percentage of validation events where the sign of the generated signal matches the sign of the synthetic forward return. This deterministic metric is for pipeline validation only and is NOT evidence of real-world predictive accuracy or investment performance.",
             "disclaimer": "This is a deterministic offline replay using synthetic validation data. It demonstrates pipeline mechanics only and is NOT evidence of real-world investment performance, guaranteed returns, or alpha.",
             "costs_note": "Results are net of a synthetic configurable 10 bps transaction cost where net metrics are shown. Results remain gross of slippage and execution latency."
         }
 
-        logger.info(f"Backtest complete. Directional Accuracy: {directional_accuracy:.1f}%. Total Incremental P&L: ${total_incremental_pnl:,.2f}")
+        logger.info(f"Backtest complete. Directional Matching Rate: {directional_accuracy:.1f}%. Total Incremental P&L: ${total_incremental_pnl:,.2f}")
         return metrics
 
 if __name__ == "__main__":
