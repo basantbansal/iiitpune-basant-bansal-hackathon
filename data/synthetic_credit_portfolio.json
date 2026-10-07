@@ -1,0 +1,42 @@
+[
+  {
+    "issuer_id": "SYNTH_TECH_LOAN_01",
+    "sector": "Technology",
+    "ead": 100000.0,
+    "pd": 0.015,
+    "lgd": 0.45,
+    "risk_weight": 1.0
+  },
+  {
+    "issuer_id": "SYNTH_RETAIL_LOAN_02",
+    "sector": "Consumer Discretionary",
+    "ead": 150000.0,
+    "pd": 0.030,
+    "lgd": 0.50,
+    "risk_weight": 1.0
+  },
+  {
+    "issuer_id": "SYNTH_ENERGY_LOAN_03",
+    "sector": "Energy",
+    "ead": 250000.0,
+    "pd": 0.020,
+    "lgd": 0.40,
+    "risk_weight": 1.0
+  },
+  {
+    "issuer_id": "SYNTH_FINANCIAL_LOAN_04",
+    "sector": "Financials",
+    "ead": 200000.0,
+    "pd": 0.010,
+    "lgd": 0.35,
+    "risk_weight": 0.5
+  },
+  {
+    "issuer_id": "SYNTH_HEALTHCARE_LOAN_05",
+    "sector": "Healthcare",
+    "ead": 300000.0,
+    "pd": 0.005,
+    "lgd": 0.30,
+    "risk_weight": 0.2
+  }
+]

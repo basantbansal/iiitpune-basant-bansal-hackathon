@@ -101,13 +101,13 @@ def test_module_a_zero_std(rebalancer):
 def test_module_b_scenarios_execute(stress_engine, rebalancer):
     weights = rebalancer.current_weights
     for scenario in stress_engine.scenarios.keys():
-        df = stress_engine.run_scenario(weights, 1_000_000, scenario)
+        df = stress_engine.run_scenario(weights, 1_000_000, scenario)['market_df']
         assert not df.empty
         assert "Total P&L" in df.columns
 
 def test_module_b_portfolio_aggregation(stress_engine, rebalancer):
     weights = rebalancer.current_weights
-    df = stress_engine.run_scenario(weights, 1_000_000, list(stress_engine.scenarios.keys())[0])
+    df = stress_engine.run_scenario(weights, 1_000_000, list(stress_engine.scenarios.keys())[0])['market_df']
     assert "Total P&L" in df.columns
     total_pl = df["Total P&L"].sum()
     assert isinstance(total_pl, (int, float))
@@ -117,7 +117,7 @@ def test_module_b_empty_portfolio(stress_engine):
     # What if weights are 0 for all
     weights = {t: 0.0 for t in ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "JPM", "JNJ", "XOM"]}
     scenario_name = list(stress_engine.scenarios.keys())[0]
-    df = stress_engine.run_scenario(weights, 1_000_000, scenario_name)
+    df = stress_engine.run_scenario(weights, 1_000_000, scenario_name)['market_df']
     assert df["Total P&L"].sum() == 0.0
 
 

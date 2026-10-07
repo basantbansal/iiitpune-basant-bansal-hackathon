@@ -106,3 +106,9 @@ By decoupling portfolio rebalancing from traditional price-lagged indicators and
 - **Deterministic Prices:** Reference prices are synthetic $100 values rather than live market data, ensuring reproducibility at the cost of real-world precision.
 - **Predefined Stress Models:** Macroeconomic stress assumptions and contagion risks are based on predefined historical correlation matrices rather than live calculations.
 - **Prototype Scope:** Groq API access is optional but enhances extraction precision. This is a hackathon prototype, not a production-grade investment advisory system.
+
+### Prototype Caveat: Banking Book Synthetic Credit Stress
+Module B contains two conceptually separate books:
+- **Trading Book market stress:** Stresses the equity portfolio dynamically based on market shocks.
+- **Banking Book synthetic credit stress:** Applies credit multipliers to a separate, offline synthetic loan portfolio.
+The credit portfolio is purely **synthetic**. All PD, LGD, EAD, and risk-weight values are illustrative assumptions for prototype demonstration. Scenario multipliers (e.g., PD multipliers) are also strictly synthetic assumptions. The "CET1 Capital Burden" is a simplified mathematical metric (Stressed ECL / Initial Synthetic CET1 Capital) designed to conceptually demonstrate capital impact; it is **NOT** a Basel-compliant CET1 ratio.

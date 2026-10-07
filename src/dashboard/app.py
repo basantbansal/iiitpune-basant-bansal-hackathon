@@ -114,31 +114,31 @@ if execute_live:
             raw_news = ingestor.fetch_live_news(max_items_per_ticker=0)
         else:
             raw_news = ingestor.fetch_live_news(max_items_per_ticker=1)
-            
+
         new_signals_processed = []
-        
+
         dedup_engine = SemanticDedup(time_window_hours=24)
         recent_docs = db.get_recent_documents(hours=24)
-        
+
         # Keep track of hashes processed in this batch to avoid duplicates within the same batch
         batch_doc_hashes = set()
-        
+
         for item in raw_news:
             raw_headline = item["headline"]
             norm_headline = EntityResolver.normalize_text(raw_headline)
             doc_hash = SemanticDedup.get_document_hash(norm_headline)
-            
+
             if doc_hash in batch_doc_hashes:
                 continue
             batch_doc_hashes.add(doc_hash)
-            
+
             # Resolve entities
             resolved = EntityResolver.resolve_entities(raw_headline)
             entities = {r.ticker for r in resolved}
-            
+
             # Semantic deduplication
             dedup_result = dedup_engine.check_duplicate(norm_headline, entities, recent_docs)
-            
+
             doc_data = {
                 "document_hash": doc_hash,
                 "canonical_group_id": dedup_result["canonical_group_id"],
@@ -150,22 +150,22 @@ if execute_live:
                 "duplicate_reason": dedup_result["reason"],
                 "resolved_entities": list(entities)
             }
-            
+
             db.log_document(doc_data)
             recent_docs.insert(0, doc_data)  # Update recent docs for next items
-            
+
             if not dedup_result["is_duplicate"]:
                 for entity in entities:
                     # Maintain exact duplicate protection for the signal table via article_hash
                     article_hash = db.generate_hash(raw_headline, entity)
-                    
+
                     if not db.is_article_processed(article_hash):
                         sig = risk_engine.analyze(
-                            text=raw_headline, 
+                            text=raw_headline,
                             entity=entity
                         )
                         sig_dict = sig.to_dict()
-                        
+
                         db.log_signal(
                             article_hash=article_hash,
                             signal_dict=sig_dict,
@@ -174,7 +174,7 @@ if execute_live:
                             published_at=item["published_at"],
                             document_hash=doc_hash
                         )
-                        
+
                         new_signals_processed.append(sig_dict)
 
     if new_signals_processed:
@@ -207,7 +207,7 @@ col_chart, col_table = st.columns([1, 1.5])
 
 if not st.session_state.latest_orders.empty:
     orders_df = st.session_state.latest_orders
-    
+
     with col_chart:
         st.markdown("**Allocation Variance (Benchmark vs Target)**")
         chart_data = pd.DataFrame({
@@ -215,27 +215,27 @@ if not st.session_state.latest_orders.empty:
             "Previous": orders_df["Prev Weight"].apply(lambda x: float(x.replace("%", ""))),
             "Target": orders_df["New Weight"].apply(lambda x: float(x.replace("%", ""))),
         })
-        
+
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            name='Previous Weight', 
-            x=chart_data['Ticker'], 
-            y=chart_data['Previous'], 
+            name='Previous Weight',
+            x=chart_data['Ticker'],
+            y=chart_data['Previous'],
             marker_color='#475569',
             text=chart_data['Previous'].apply(lambda x: f"{x}%"),
             textposition='auto'
         ))
         fig.add_trace(go.Bar(
-            name='Target Weight', 
-            x=chart_data['Ticker'], 
-            y=chart_data['Target'], 
+            name='Target Weight',
+            x=chart_data['Ticker'],
+            y=chart_data['Target'],
             marker_color='#3b82f6',
             text=chart_data['Target'].apply(lambda x: f"{x}%"),
             textposition='auto'
         ))
         fig.update_layout(
-            barmode='group', 
-            plot_bgcolor='rgba(0,0,0,0)', 
+            barmode='group',
+            plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=0, r=0, t=30, b=0),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -253,8 +253,8 @@ else:
         base_weights = [10.0] * len(rebalancer.tickers)
         fig = go.Figure(data=[
             go.Bar(
-                x=rebalancer.tickers, 
-                y=base_weights, 
+                x=rebalancer.tickers,
+                y=base_weights,
                 marker_color='#475569',
                 text=[f"{w}%" for w in base_weights],
                 textposition='auto'
@@ -267,16 +267,16 @@ else:
             yaxis=dict(title="Weight (%)", gridcolor="#333333", range=[0, 30]),
         )
         st.plotly_chart(fig, use_container_width=True)
-        
+
     with col_table:
         st.markdown("**Baseline Portfolio (Equal Weight)**")
         base_df = pd.DataFrame([
-            {"Ticker": t, "Target Weight": "10.00%", "Current Shares": round(rebalancer.current_shares[t], 2)} 
+            {"Ticker": t, "Target Weight": "10.00%", "Current Shares": round(rebalancer.current_shares[t], 2)}
             for t in rebalancer.tickers
         ])
         st.dataframe(base_df, use_container_width=True, hide_index=True)
 
-# --- Section 3: Strategic Stress Testing (Module B) --- 
+# --- Section 3: Strategic Stress Testing (Module B) ---
 
 st.markdown("---")
 
@@ -289,44 +289,47 @@ col_scen, col_res = st.columns([1, 2.5])
 with col_scen:
     selected_scenario = st.radio("Select Macroeconomic Scenario", list(stress_engine.scenarios.keys()))
     shock_params = stress_engine.scenarios[selected_scenario]
-    
+
     st.markdown("#### Shock Parameters")
     st.info(shock_params["desc"])
     st.metric("Broad Equity Market", f"{shock_params['equity_shock']*100}%")
     st.metric("Interest Rates (DV01)", f"{shock_params['rate_shock_bps']:+} bps")
     st.metric("Credit Spreads", f"{shock_params['spread_shock_bps']:+} bps")
-    
+
     run_stress = st.button("🔥 Run Stress Test", type="primary", use_container_width=True)
 
 with col_res:
     if run_stress:
         with st.spinner("Calculating cross-asset sensitivities..."):
-            stress_df = stress_engine.run_scenario(
-                current_weights=rebalancer.current_weights, 
+            stress_out = stress_engine.run_scenario(
+                current_weights=rebalancer.current_weights,
                 total_aum=total_val,  # Using total_val calculated earlier in the script
                 scenario_name=selected_scenario
             )
-            
+            stress_df = stress_out["market_df"]
+            credit_metrics = stress_out.get("credit_metrics", {})
+
+            st.markdown("### Trading Book Market Stress")
             total_loss = stress_df["Total P&L"].sum()
             portfolio_drawdown = (total_loss / total_val) * 100
-            
+
             # Top-level stress KPIs
             sk1, sk2, sk3 = st.columns(3)
             sk1.metric("Pre-Shock AUM", f"${total_val:,.0f}")
             sk2.metric("Stressed AUM", f"${(total_val + total_loss):,.0f}", f"{total_loss:,.0f}")
             sk3.metric("Portfolio Drawdown", f"{portfolio_drawdown:.2f}%")
-            
+
             st.markdown("#### Asset-Level Exposure & P&L Attribution")
-            
+
             # Format for display
             display_df = stress_df.copy()
             format_cols = ["Base Exposure", "Equity P&L", "Rate P&L", "Spread P&L", "Total P&L", "Stressed Value"]
             for c in format_cols:
                 display_df[c] = display_df[c].apply(lambda x: f"${x:,.0f}")
             display_df["Drawdown (%)"] = display_df["Drawdown (%)"].apply(lambda x: f"{x:.2f}%")
-            
+
             st.dataframe(display_df, use_container_width=True, hide_index=True)
-            
+
             # Visualize Drawdown Contribution
             st.markdown("#### Drawdown Contribution by Asset")
             fig_stress = go.Figure(go.Bar(
@@ -340,5 +343,18 @@ with col_res:
                 font=dict(color="white")
             )
             st.plotly_chart(fig_stress, use_container_width=True)
+
+            if credit_metrics:
+                st.markdown("---")
+                st.markdown("### Banking Book Credit Stress")
+                st.caption("Credit portfolio and stress parameters are illustrative synthetic assumptions for prototype demonstration; they are not representative of actual company or bank risk.")
+
+                ck1, ck2, ck3 = st.columns(3)
+                ck1.metric("Baseline Expected Credit Loss (ECL)", f"${credit_metrics['baseline_ecl']:,.0f}")
+                ck2.metric("Stressed ECL", f"${credit_metrics['stressed_ecl']:,.0f}", f"+${credit_metrics['incremental_ecl']:,.0f} (Incremental)", delta_color="inverse")
+                ck3.metric("RWA (Synthetic)", f"${credit_metrics['rwa']:,.0f}")
+
+                st.metric("CET1 Capital Burden (Simplified)", f"{credit_metrics['cet1_capital_burden']*100:.2f}%")
+
     else:
         st.write("Select a scenario on the left and click 'Run Stress Test' to evaluate the current portfolio.")

@@ -23,42 +23,71 @@ class StressEngine:
             "JNJ":   {"beta": 0.5, "rate_dv01": 1.0, "spread_dv01": 0.5},  # Defensive
             "XOM":   {"beta": 0.8, "rate_dv01": 0.5, "spread_dv01": 1.0},  # Value/Commodity
         }
-        
+
         # Predefined Macro Scenarios
         self.scenarios = {
             "1. 2022 Fed Tightening Shock": {
                 "equity_shock": -0.15, "rate_shock_bps": 150, "spread_shock_bps": 50,
+                "pd_multiplier": 1.2, "lgd_multiplier": 1.1, "exposure_multiplier": 1.05,
                 "desc": "Aggressive rate hikes crush growth multiples."
             },
             "2. Systemic Credit Crunch": {
                 "equity_shock": -0.20, "rate_shock_bps": -50, "spread_shock_bps": 250,
+                "pd_multiplier": 2.0, "lgd_multiplier": 1.5, "exposure_multiplier": 1.2,
                 "desc": "Liquidity dries up. Flight to safety drops rates, but spreads blow out."
             },
             "3. Tech Bubble Burst": {
                 "equity_shock": -0.30, "rate_shock_bps": -25, "spread_shock_bps": 25,
+                "pd_multiplier": 1.1, "lgd_multiplier": 1.0, "exposure_multiplier": 1.0,
                 "desc": "Severe tech selloff. Defensive assets outperform."
             }
         }
 
-    def run_scenario(self, current_weights: dict, total_aum: float, scenario_name: str) -> pd.DataFrame:
+
+        # Synthetic Banking Book Portfolio Assumptions
+        self.synthetic_initial_cet1_capital = 5_000_000.0
+        self.synthetic_credit_portfolio = self._load_credit_portfolio()
+
+    def _load_credit_portfolio(self) -> List[CreditExposure]:
+        import json
+        import os
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "synthetic_credit_portfolio.json")
+        exposures = []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for item in data:
+                    exp = CreditExposure(
+                        identifier=item["issuer_id"],
+                        ead=item["ead"],
+                        pd=item["pd"],
+                        lgd=item["lgd"],
+                        risk_weight=item["risk_weight"]
+                    )
+                    exposures.append(exp)
+        except Exception as e:
+            pass
+        return exposures
+
+    def run_scenario(self, current_weights: dict, total_aum: float, scenario_name: str) -> dict:
         if scenario_name not in self.scenarios:
             raise ValueError("Scenario not found.")
-            
+
         shock = self.scenarios[scenario_name]
         results = []
-        
+
         for ticker, weight in current_weights.items():
             profile = self.asset_profiles.get(ticker, {"beta": 1.0, "rate_dv01": 1.0, "spread_dv01": 1.0})
             notional = total_aum * weight
-            
+
             # P&L Math
             equity_pnL = notional * (profile["beta"] * shock["equity_shock"])
             rate_pnl = notional * (-profile["rate_dv01"] * (shock["rate_shock_bps"] / 10000.0))
             spread_pnl = notional * (-profile["spread_dv01"] * (shock["spread_shock_bps"] / 10000.0))
-            
+
             total_pnl = equity_pnL + rate_pnl + spread_pnl
             stress_value = notional + total_pnl
-            
+
             results.append({
                 "Ticker": ticker,
                 "Base Exposure": notional,
@@ -69,8 +98,35 @@ class StressEngine:
                 "Stressed Value": stress_value,
                 "Drawdown (%)": (total_pnl / notional) * 100 if notional > 0 else 0
             })
-            
-        return pd.DataFrame(results)
+
+        market_df = pd.DataFrame(results)
+
+        credit_metrics = {}
+        if getattr(self, "synthetic_credit_portfolio", None):
+            credit_results = self.apply_credit_stress(
+                exposures=self.synthetic_credit_portfolio,
+                pd_multiplier=shock.get("pd_multiplier", 1.0),
+                lgd_multiplier=shock.get("lgd_multiplier", 1.0),
+                initial_cet1_capital=self.synthetic_initial_cet1_capital,
+                exposure_multiplier=shock.get("exposure_multiplier", 1.0)
+            )
+            agg = self.aggregate_credit_portfolio(credit_results, self.synthetic_initial_cet1_capital)
+            credit_metrics = {
+                "baseline_ecl": agg["total_baseline_ecl"],
+                "stressed_ecl": agg["total_stressed_ecl"],
+                "incremental_ecl": agg["total_incremental_ecl"],
+                "rwa": agg["total_rwa"],
+                "cet1_capital_burden": agg["cet1_impact"],
+                "num_exposures": len(self.synthetic_credit_portfolio),
+                "pd_multiplier": shock.get("pd_multiplier", 1.0),
+                "lgd_multiplier": shock.get("lgd_multiplier", 1.0),
+                "exposure_multiplier": shock.get("exposure_multiplier", 1.0)
+            }
+
+        return {
+            "market_df": market_df,
+            "credit_metrics": credit_metrics
+        }
 
     def apply_credit_stress(
         self,
