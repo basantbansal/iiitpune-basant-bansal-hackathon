@@ -39,8 +39,16 @@ class IndexRebalancer:
         self.alpha_tilt = alpha_tilt
         self.price_provider = price_provider or PriceProvider()
 
-        # Initialize Equal-Weight Portfolio
+        # Check constraint feasibility
         n_assets = len(self.tickers)
+        if self.min_weight * n_assets > 1.0:
+            raise ValueError(f"Infeasible constraints: min_weight {self.min_weight} * {n_assets} assets > 1.0")
+        if self.max_weight * n_assets < 1.0:
+            raise ValueError(f"Infeasible constraints: max_weight {self.max_weight} * {n_assets} assets < 1.0")
+        if self.min_weight > self.max_weight:
+            raise ValueError("Infeasible constraints: min_weight > max_weight")
+
+        # Initialize Equal-Weight Portfolio
         self.current_weights = {
             ticker: 1.0 / n_assets for ticker in self.tickers
         }

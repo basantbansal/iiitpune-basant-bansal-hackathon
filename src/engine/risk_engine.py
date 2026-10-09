@@ -121,8 +121,9 @@ class RiskEngine:
                 {{"sentiment": 0.85, "event_type": "Earnings & Financials", "evidence": "record quarterly profits"}}
                 """
                 
+                groq_model_name = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
                 completion = client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model=groq_model_name,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
                     response_format={"type": "json_object"} # Forces LLaMA to return valid JSON
@@ -137,7 +138,7 @@ class RiskEngine:
                 event_type = groq_data.get("event_type", event_type)
                 evidence = groq_data.get("evidence", evidence)
                 event_conf = 0.90 # High confidence due to LLM reasoning
-                model_used = "ensemble-groq-llama3-json"
+                model_used = f"ensemble-groq-{groq_model_name}-json"
                 
             except Exception as e:
                 print(f"Groq API fallback triggered: {e}")
