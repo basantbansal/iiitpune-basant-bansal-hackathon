@@ -1,36 +1,59 @@
 import sys
 import os
 
-# Ensure the root project directory is on sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from datetime import datetime
 
 from src.engine.risk_engine import RiskEngine
 from src.rebalancer.index_rebalancer import IndexRebalancer
 from src.engine.ingestion import MarketNewsIngestion
 from src.storage.db import SignalDatabase
 from src.engine.processor import EntityResolver, SemanticDedup
-
-import sys
-import os
+from src.engine.stress_engine import StressEngine
 from dotenv import load_dotenv
 
-from src.engine.stress_engine import StressEngine
-
-# Load environment variables from .egroq_api_keynv file
 load_dotenv()
 
-# Page configuration
 st.set_page_config(
-    page_title="Tactical Index Rebalancer | Risk Management",
+    page_title="Institutional Risk Terminal",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Initialize engines & DB in session state for persistence
+# Custom CSS for premium terminal look
+st.markdown("""
+<style>
+    /* Dark professional theme overrides */
+    .stApp {
+        background-color: #0E1117;
+        color: #C9D1D9;
+    }
+    h1, h2, h3 {
+        color: #E6EDF3 !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .stMetric {
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        border-radius: 6px;
+        padding: 15px;
+    }
+    .stMetric label {
+        color: #8B949E !important;
+    }
+    .stDataFrame {
+        border: 1px solid #30363D;
+        border-radius: 6px;
+    }
+    div.block-container {
+        padding-top: 2rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 @st.cache_resource
 def get_core_systems():
     return RiskEngine(), MarketNewsIngestion(), SignalDatabase(), StressEngine()
@@ -43,318 +66,183 @@ if "signals_log" not in st.session_state:
     st.session_state.signals_log = []
 if "latest_orders" not in st.session_state:
     st.session_state.latest_orders = pd.DataFrame()
+if "last_updated" not in st.session_state:
+    st.session_state.last_updated = "Never"
 
 rebalancer = st.session_state.rebalancer
 
-# --- Sidebar Controls ---
-st.sidebar.header("System Configuration")
-data_mode = st.sidebar.radio("Data Source Mode", ["Live Market (Google RSS)", "Offline Crisis Replay"])
-groq_api_key = os.getenv("GROQ_API_KEY", "")
+# Sidebar
+with st.sidebar:
+    st.title("⚙️ System Control")
+    st.markdown("---")
+    
+    data_mode = st.radio("Data Feed", ["Live Market (Google RSS)", "Offline Crisis Replay"])
+    
+    groq_api_key = os.getenv("GROQ_API_KEY", "")
+    if groq_api_key:
+        st.success("LLM Engine: Active")
+    else:
+        st.warning("LLM Engine: Fallback Mode")
+        
+    st.markdown("---")
+    st.subheader("Portfolio Parameters")
+    initial_capital = st.number_input("AUM ($)", value=1_000_000, step=100_000, format="%d")
+    alpha_tilt = st.slider("Active Risk Tolerance (α)", min_value=0.01, max_value=0.10, value=0.05, step=0.01)
+    rebalancer.alpha_tilt = alpha_tilt
+    
+    st.markdown("---")
+    if st.button("🗑️ Reset Portfolio State", use_container_width=True):
+        if os.path.exists(db.db_path):
+            try: os.remove(db.db_path)
+            except Exception: pass
+        db._init_db()
+        st.session_state.rebalancer = IndexRebalancer(initial_capital=initial_capital, alpha_tilt=alpha_tilt)
+        st.session_state.signals_log = []
+        st.session_state.latest_orders = pd.DataFrame()
+        st.session_state.last_updated = "Never"
+        st.rerun()
 
-if groq_api_key:
-    st.sidebar.success("LLM: Available")
-else:
-    st.sidebar.info("LLM: Local fallback")
+st.title("Global Equity Risk Terminal")
+st.caption(f"Last updated: {st.session_state.last_updated} UTC | Real-time NLP Risk Assessment")
 
-
-st.sidebar.markdown("---")
-st.sidebar.header("Portfolio Parameters")
-initial_capital = st.sidebar.number_input("Assets Under Management (AUM)", value=1_000_000, step=100_000)
-alpha_tilt = st.sidebar.slider("Active Risk Tolerance (alpha)", min_value=0.01, max_value=0.10, value=0.05, step=0.01)
-rebalancer.alpha_tilt = alpha_tilt
-
-# Bulletproof DB Flush: Physically deletes the file and rebuilds it
-if st.sidebar.button("🗑️ Flush DB & Reset State"):
-    if os.path.exists(db.db_path):
-        try:
-            os.remove(db.db_path)
-        except Exception:
-            pass
-    db._init_db() # Rebuild the empty table
-    st.session_state.rebalancer = IndexRebalancer(initial_capital=initial_capital, alpha_tilt=alpha_tilt)
-    st.session_state.signals_log = []
-    st.session_state.latest_orders = pd.DataFrame()
-    st.rerun()
-
-# --- Main Header ---
-st.title("Tactical Index Rebalancer (Module A)")
-st.caption("Quantitative Risk Signal Extraction, Deduplication, & Dynamic Portfolio Reallocation")
-st.markdown("---")
-
-# Calculate Top KPIs safely
+# Compute top-level metrics
 current_prices = rebalancer.fetch_current_prices()
 total_val = sum(rebalancer.current_shares[t] * current_prices[t] for t in rebalancer.tickers)
+cw_series = pd.Series(rebalancer.current_weights)
+max_asset, min_asset = cw_series.idxmax(), cw_series.idxmin()
+total_turnover = st.session_state.latest_orders["Trade Value ($)"].sum() if not st.session_state.latest_orders.empty else 0.0
 
-# Safely extract min/max weights for display
-current_weights_series = pd.Series(rebalancer.current_weights)
-max_asset = current_weights_series.idxmax()
-min_asset = current_weights_series.idxmin()
-max_wt = current_weights_series[max_asset] * 100
-min_wt = current_weights_series[min_asset] * 100
-
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-kpi1.metric("Current AUM", f"${total_val:,.2f}")
-kpi2.metric("Max Overweight Asset", f"{max_asset} ({max_wt:.2f}%)")
-kpi3.metric("Max Underweight Asset", f"{min_asset} ({min_wt:.2f}%)")
-
-if not st.session_state.latest_orders.empty:
-    total_turnover = st.session_state.latest_orders["Trade Value ($)"].sum()
-    kpi4.metric("Capital Reallocated", f"${total_turnover:,.2f}")
-else:
-    kpi4.metric("Capital Reallocated", "$0.00")
-
-# --- Execution Button ---
-st.markdown("### ") # Spacing
-execute_live = st.button("🚀 Fetch News & Update Weights", type="primary", use_container_width=True)
-
-if execute_live:
-    with st.spinner("Fetching news, checking DB for duplicates, and scoring via Risk Engine..."):
-        # Force offline mode if selected
-        if "Offline" in data_mode:
-            raw_news = ingestor.fetch_live_news(max_items_per_ticker=0)
-        else:
-            raw_news = ingestor.fetch_live_news(max_items_per_ticker=1)
-
-        new_signals_processed = []
-
-        dedup_engine = SemanticDedup(time_window_hours=24)
-        recent_docs = db.get_recent_documents(hours=24)
-
-        # Keep track of hashes processed in this batch to avoid duplicates within the same batch
-        batch_doc_hashes = set()
-
-        for item in raw_news:
-            raw_headline = item["headline"]
-            norm_headline = EntityResolver.normalize_text(raw_headline)
-            doc_hash = SemanticDedup.get_document_hash(norm_headline)
-
-            if doc_hash in batch_doc_hashes:
-                continue
-            batch_doc_hashes.add(doc_hash)
-
-            # Resolve entities
-            resolved = EntityResolver.resolve_entities(raw_headline)
-            entities = {r.ticker for r in resolved}
-
-            # Semantic deduplication
-            dedup_result = dedup_engine.check_duplicate(norm_headline, entities, recent_docs)
-
-            doc_data = {
-                "document_hash": doc_hash,
-                "canonical_group_id": dedup_result["canonical_group_id"],
-                "headline": raw_headline,
-                "normalized_headline": norm_headline,
-                "source": item["source"],
-                "published_at": item["published_at"],
-                "is_duplicate": dedup_result["is_duplicate"],
-                "duplicate_reason": dedup_result["reason"],
-                "resolved_entities": list(entities)
-            }
-
-            db.log_document(doc_data)
-            recent_docs.insert(0, doc_data)  # Update recent docs for next items
-
-            if not dedup_result["is_duplicate"]:
-                for entity in entities:
-                    # Maintain exact duplicate protection for the signal table via article_hash
-                    article_hash = db.generate_hash(raw_headline, entity)
-
-                    if not db.is_article_processed(article_hash):
-                        sig = risk_engine.analyze(
-                            text=raw_headline,
-                            entity=entity
-                        )
-                        sig_dict = sig.to_dict()
-
-                        db.log_signal(
-                            article_hash=article_hash,
-                            signal_dict=sig_dict,
-                            headline=raw_headline,
-                            source=item["source"],
-                            published_at=item["published_at"],
-                            document_hash=doc_hash
-                        )
-
-                        new_signals_processed.append(sig_dict)
-
-    if new_signals_processed:
-        st.success(f"Processed {len(new_signals_processed)} new actionable market events.")
-        st.session_state.signals_log.extend(new_signals_processed)
-        st.session_state.latest_orders = rebalancer.rebalance(new_signals_processed)
-        st.rerun()
-    else:
-        st.info("✅ All recent headlines have already been processed and priced into the portfolio. No new active risk detected.")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total AUM", f"${total_val:,.0f}")
+col2.metric("Highest Conviction", f"{max_asset}", f"{cw_series[max_asset]*100:.1f}% wt")
+col3.metric("Lowest Conviction", f"{min_asset}", f"{cw_series[min_asset]*100:.1f}% wt")
+col4.metric("Capital Reallocated", f"${total_turnover:,.0f}")
 
 st.markdown("---")
 
-# --- Section 1: Risk Radar (Signals) ---
-st.subheader("📡 Risk Radar (Auditable Signals)")
-if st.session_state.signals_log:
-    sig_df = pd.DataFrame(st.session_state.signals_log)[
-        ["entity", "event_classification", "sentiment_score", "impact_score", "confidence", "model_version", "headline"]
-    ]
-    sig_df.columns = ["Ticker", "Event Type", "Sentiment", "Impact", "Confidence", "Model Engine", "Source Text"]
-    st.dataframe(sig_df, use_container_width=True, hide_index=True)
-else:
-    st.write("Awaiting live signals. The portfolio is currently operating on baseline neutral data.")
+# Main Action
+col_action, col_info = st.columns([1, 3])
+with col_action:
+    if st.button("🔄 Execute Market Scan", type="primary", use_container_width=True):
+        with st.spinner("Aggregating market news & computing signal impacts..."):
+            raw_news = ingestor.fetch_live_news(max_items_per_ticker=0 if "Offline" in data_mode else 1)
+            new_signals = []
+            dedup_engine = SemanticDedup(time_window_hours=24)
+            recent_docs = db.get_recent_documents(hours=24)
+            batch_hashes = set()
+            
+            for item in raw_news:
+                raw_hd = item["headline"]
+                norm_hd = EntityResolver.normalize_text(raw_hd)
+                d_hash = SemanticDedup.get_document_hash(norm_hd)
+                if d_hash in batch_hashes: continue
+                batch_hashes.add(d_hash)
+                
+                resolved = EntityResolver.resolve_entities(raw_hd)
+                entities = {r.ticker for r in resolved}
+                dedup_res = dedup_engine.check_duplicate(norm_hd, entities, recent_docs)
+                
+                doc_data = {
+                    "document_hash": d_hash, "canonical_group_id": dedup_res["canonical_group_id"],
+                    "headline": raw_hd, "normalized_headline": norm_hd,
+                    "source": item["source"], "published_at": item["published_at"],
+                    "is_duplicate": dedup_res["is_duplicate"], "duplicate_reason": dedup_res["reason"],
+                    "resolved_entities": list(entities)
+                }
+                db.log_document(doc_data)
+                recent_docs.insert(0, doc_data)
+                
+                if not dedup_res["is_duplicate"]:
+                    for ent in entities:
+                        a_hash = db.generate_hash(raw_hd, ent)
+                        if not db.is_article_processed(a_hash):
+                            sig = risk_engine.analyze(text=raw_hd, entity=ent)
+                            sig_dict = sig.to_dict()
+                            db.log_signal(
+                                article_hash=a_hash, signal_dict=sig_dict,
+                                headline=raw_hd, source=item["source"],
+                                published_at=item["published_at"], document_hash=d_hash
+                            )
+                            new_signals.append(sig_dict)
+            
+            if new_signals:
+                st.session_state.signals_log.extend(new_signals)
+                st.session_state.latest_orders = rebalancer.rebalance(new_signals)
+                st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.rerun()
+            else:
+                st.info("No actionable new risk events detected in the current window.")
 
-st.markdown("---")
+# Tabs for Organization
+tab1, tab2, tab3 = st.tabs(["📊 Portfolio Allocation", "📡 Active Risk Signals", "⚠️ Macro Stress Testing"])
 
-# --- Section 2: Algorithmic Rebalancer Execution ---
-st.subheader("⚖️ Algorithmic Rebalancer Execution")
-
-col_chart, col_table = st.columns([1, 1.5])
-
-if not st.session_state.latest_orders.empty:
-    orders_df = st.session_state.latest_orders
-
+with tab1:
+    col_chart, col_table = st.columns([1.2, 1])
     with col_chart:
-        st.markdown("**Allocation Variance (Benchmark vs Target)**")
-        chart_data = pd.DataFrame({
-            "Ticker": orders_df["Ticker"],
-            "Previous": orders_df["Prev Weight"].apply(lambda x: float(x.replace("%", ""))),
-            "Target": orders_df["New Weight"].apply(lambda x: float(x.replace("%", ""))),
-        })
-
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            name='Previous Weight',
-            x=chart_data['Ticker'],
-            y=chart_data['Previous'],
-            marker_color='#475569',
-            text=chart_data['Previous'].apply(lambda x: f"{x}%"),
-            textposition='auto'
-        ))
-        fig.add_trace(go.Bar(
-            name='Target Weight',
-            x=chart_data['Ticker'],
-            y=chart_data['Target'],
-            marker_color='#3b82f6',
-            text=chart_data['Target'].apply(lambda x: f"{x}%"),
-            textposition='auto'
-        ))
-        fig.update_layout(
-            barmode='group',
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=30, b=0),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            yaxis=dict(title="Weight (%)", gridcolor="#333333"),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col_table:
-        st.markdown("**Trade Execution Ticket**")
-        st.dataframe(orders_df, use_container_width=True, hide_index=True)
-
-else:
-    with col_chart:
-        st.markdown("**Target Allocation (Baseline)**")
-        base_weights = [10.0] * len(rebalancer.tickers)
-        fig = go.Figure(data=[
-            go.Bar(
-                x=rebalancer.tickers,
-                y=base_weights,
-                marker_color='#475569',
-                text=[f"{w}%" for w in base_weights],
-                textposition='auto'
-            )
-        ])
-        fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=30, b=0),
-            yaxis=dict(title="Weight (%)", gridcolor="#333333", range=[0, 30]),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col_table:
-        st.markdown("**Baseline Portfolio (Equal Weight)**")
-        base_df = pd.DataFrame([
-            {"Ticker": t, "Target Weight": "10.00%", "Current Shares": round(rebalancer.current_shares[t], 2)}
+        st.markdown("#### Target vs. Baseline Weight Distribution")
+        df_wts = pd.DataFrame([
+            {"Ticker": t, "Target": rebalancer.current_weights[t]*100, "Baseline": 10.0} 
             for t in rebalancer.tickers
         ])
-        st.dataframe(base_df, use_container_width=True, hide_index=True)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name='Target', x=df_wts['Ticker'], y=df_wts['Target'], marker_color='#3b82f6'))
+        fig.add_trace(go.Bar(name='Baseline', x=df_wts['Ticker'], y=df_wts['Baseline'], marker_color='#475569'))
+        fig.update_layout(
+            barmode='group', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=0, r=0, t=10, b=0), yaxis=dict(title="Weight (%)", gridcolor="#333333"),
+            font=dict(color="#C9D1D9"), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with col_table:
+        st.markdown("#### Execution Ledger")
+        if not st.session_state.latest_orders.empty:
+            st.dataframe(st.session_state.latest_orders, use_container_width=True, hide_index=True)
+        else:
+            st.write("No active rebalancing orders pending.")
 
-# --- Section 3: Strategic Stress Testing (Module B) ---
+with tab2:
+    if st.session_state.signals_log:
+        sig_df = pd.DataFrame(st.session_state.signals_log)[
+            ["entity", "event_classification", "sentiment_score", "impact_score", "confidence", "model_version", "headline"]
+        ].sort_values("impact_score", ascending=False)
+        sig_df.columns = ["Asset", "Event", "Sentiment", "Impact", "Confidence", "Model", "Headline"]
+        
+        # Color code sentiment
+        def color_sentiment(val):
+            color = '#2ea043' if val > 0 else '#da3633' if val < 0 else '#8b949e'
+            return f'color: {color}'
+            
+        st.dataframe(sig_df.style.map(color_sentiment, subset=['Sentiment']), use_container_width=True, hide_index=True)
+    else:
+        st.info("Awaiting live signals. Portfolio operating on baseline.")
 
-st.markdown("---")
-
-# --- Section 3: Strategic Stress Testing (Module B) ---
-st.subheader("⚠️ Strategic Stress Testing (Module B)")
-st.caption("Evaluate portfolio resilience against historical and synthetic macroeconomic shocks.")
-
-col_scen, col_res = st.columns([1, 2.5])
-
-with col_scen:
-    selected_scenario = st.radio("Select Macroeconomic Scenario", list(stress_engine.scenarios.keys()))
-    shock_params = stress_engine.scenarios[selected_scenario]
-
-    st.markdown("#### Shock Parameters")
-    st.info(shock_params["desc"])
-    st.metric("Broad Equity Market", f"{shock_params['equity_shock']*100}%")
-    st.metric("Interest Rates (DV01)", f"{shock_params['rate_shock_bps']:+} bps")
-    st.metric("Credit Spreads", f"{shock_params['spread_shock_bps']:+} bps")
-
-    run_stress = st.button("🔥 Run Stress Test", type="primary", use_container_width=True)
-
-with col_res:
-    if run_stress:
-        with st.spinner("Calculating cross-asset sensitivities..."):
-            stress_out = stress_engine.run_scenario(
-                current_weights=rebalancer.current_weights,
-                total_aum=total_val,  # Using total_val calculated earlier in the script
-                scenario_name=selected_scenario
-            )
-            stress_df = stress_out["market_df"]
-            credit_metrics = stress_out.get("credit_metrics", {})
-
-            st.markdown("### Trading Book Market Stress")
-            total_loss = stress_df["Total P&L"].sum()
-            portfolio_drawdown = (total_loss / total_val) * 100
-
-            # Top-level stress KPIs
-            sk1, sk2, sk3 = st.columns(3)
-            sk1.metric("Pre-Shock AUM", f"${total_val:,.0f}")
-            sk2.metric("Stressed AUM", f"${(total_val + total_loss):,.0f}", f"{total_loss:,.0f}")
-            sk3.metric("Portfolio Drawdown", f"{portfolio_drawdown:.2f}%")
-
-            st.markdown("#### Asset-Level Exposure & P&L Attribution")
-
-            # Format for display
-            display_df = stress_df.copy()
-            format_cols = ["Base Exposure", "Equity P&L", "Rate P&L", "Spread P&L", "Total P&L", "Stressed Value"]
-            for c in format_cols:
-                display_df[c] = display_df[c].apply(lambda x: f"${x:,.0f}")
-            display_df["Drawdown (%)"] = display_df["Drawdown (%)"].apply(lambda x: f"{x:.2f}%")
-
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-            # Visualize Drawdown Contribution
-            st.markdown("#### Drawdown Contribution by Asset")
+with tab3:
+    st.markdown("#### Scenario Analysis & Tail Risk")
+    col_scen, col_res = st.columns([1, 2])
+    with col_scen:
+        scen_name = st.radio("Select Macro Shock Scenario", list(stress_engine.scenarios.keys()))
+        shock = stress_engine.scenarios[scen_name]
+        st.info(shock["desc"])
+        st.write(f"**Equities:** {shock['equity_shock']*100}% | **Rates:** {shock['rate_shock_bps']} bps | **Spreads:** {shock['spread_shock_bps']} bps")
+        run_stress = st.button("Run Simulation", use_container_width=True)
+        
+    with col_res:
+        if run_stress:
+            out = stress_engine.run_scenario(rebalancer.current_weights, total_val, scen_name)
+            df_stress = out["market_df"]
+            t_loss = df_stress["Total P&L"].sum()
+            
+            st.metric("Estimated Portfolio Drawdown", f"${t_loss:,.0f}", f"{(t_loss/total_val)*100:.2f}%")
+            
             fig_stress = go.Figure(go.Bar(
-                x=stress_df["Ticker"],
-                y=stress_df["Drawdown (%)"],
-                marker_color=['#ef4444' if x < 0 else '#22c55e' for x in stress_df["Drawdown (%)"]]
+                x=df_stress["Ticker"], y=df_stress["Drawdown (%)"],
+                marker_color=['#da3633' if x < 0 else '#2ea043' for x in df_stress["Drawdown (%)"]]
             ))
             fig_stress.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Asset Drawdown (%)",
-                font=dict(color="white")
+                title="Asset-Level Drawdown (%)",
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=30, b=0),
+                yaxis_title="%", font=dict(color="#C9D1D9")
             )
             st.plotly_chart(fig_stress, use_container_width=True)
 
-            if credit_metrics:
-                st.markdown("---")
-                st.markdown("### Banking Book Credit Stress")
-                st.caption("Credit portfolio and stress parameters are illustrative synthetic assumptions for prototype demonstration; they are not representative of actual company or bank risk.")
-
-                ck1, ck2, ck3 = st.columns(3)
-                ck1.metric("Baseline Expected Credit Loss (ECL)", f"${credit_metrics['baseline_ecl']:,.0f}")
-                ck2.metric("Stressed ECL", f"${credit_metrics['stressed_ecl']:,.0f}", f"+${credit_metrics['incremental_ecl']:,.0f} (Incremental)", delta_color="inverse")
-                ck3.metric("RWA (Synthetic)", f"${credit_metrics['rwa']:,.0f}")
-
-                st.metric("CET1 Capital Burden (Simplified)", f"{credit_metrics['cet1_capital_burden']*100:.2f}%")
-
-    else:
-        st.write("Select a scenario on the left and click 'Run Stress Test' to evaluate the current portfolio.")

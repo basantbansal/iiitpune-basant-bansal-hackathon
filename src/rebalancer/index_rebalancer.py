@@ -98,20 +98,53 @@ class IndexRebalancer:
         else:
             z_scores = np.zeros_like(tilts_array)
 
-        # 3. Apply active tilts and enforce box constraints
-        updated_weights = {}
+        # 3. Apply active tilts
+        raw_weights = {}
         for idx, ticker in enumerate(self.tickers):
             base_w = self.current_weights[ticker]
             target_w = base_w + (self.alpha_tilt * z_scores[idx])
-            updated_weights[ticker] = max(
-                self.min_weight, min(self.max_weight, target_w)
-            )
+            raw_weights[ticker] = target_w
 
-        # 4. Simplex Normalization (Sum of weights == 100%)
-        total_weight = sum(updated_weights.values())
-        final_weights = {
-            t: w / total_weight for t, w in updated_weights.items()
-        }
+        # 4. Simplex Normalization and Bound Enforcement
+        # We iteratively enforce bounds and re-normalize until convergence
+        updated_weights = raw_weights.copy()
+        
+        for _ in range(20):
+            # Enforce max/min
+            for t in self.tickers:
+                updated_weights[t] = max(self.min_weight, min(self.max_weight, updated_weights[t]))
+                
+            # Normalize
+            total = sum(updated_weights.values())
+            
+            # Re-distribute the excess/deficit only to assets not constrained
+            # A simple approximation is to just divide, but it might break bounds again.
+            # However, repeating this loop limits violations asymptotically.
+            for t in self.tickers:
+                updated_weights[t] = updated_weights[t] / total
+            
+            # Check if all satisfy constraints with a small tolerance
+            all_valid = all(self.min_weight - 1e-6 <= w <= self.max_weight + 1e-6 for w in updated_weights.values())
+            if all_valid and abs(sum(updated_weights.values()) - 1.0) < 1e-6:
+                break
+                
+        # Hard cap to ensure strictly within bounds if tolerance is exceeded
+        final_weights = {t: max(self.min_weight, min(self.max_weight, w)) for t, w in updated_weights.items()}
+        # To guarantee sum=1.0, adjust the largest unconstrained weight
+        diff = 1.0 - sum(final_weights.values())
+        if abs(diff) > 1e-8:
+            # Add difference to an asset that can take it
+            for t in self.tickers:
+                if diff > 0 and final_weights[t] < self.max_weight:
+                    addable = min(self.max_weight - final_weights[t], diff)
+                    final_weights[t] += addable
+                    diff -= addable
+                elif diff < 0 and final_weights[t] > self.min_weight:
+                    subbable = min(final_weights[t] - self.min_weight, -diff)
+                    final_weights[t] -= subbable
+                    diff += subbable
+                if abs(diff) < 1e-8:
+                    break
 
         # 5. Generate Execution Orders
         rows = []

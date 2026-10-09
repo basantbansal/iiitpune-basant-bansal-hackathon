@@ -183,3 +183,38 @@ def test_ingestion_malformed_input(ingestor, monkeypatch, tmp_path):
         assert isinstance(news, list)
     except json.JSONDecodeError:
         pass # Expected if not caught in ingestion
+
+def test_risk_engine_groq_failure_fallback(risk_engine, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake_key")
+    import src.engine.risk_engine
+    
+    class FakeGroq:
+        def __init__(self, api_key):
+            self.chat = self.FakeChat()
+        class FakeChat:
+            class FakeCompletions:
+                def create(self, *args, **kwargs):
+                    raise Exception("Groq is down")
+            def __init__(self):
+                self.completions = self.FakeCompletions()
+
+    monkeypatch.setattr(src.engine.risk_engine, "Groq", FakeGroq)
+    sig = risk_engine.analyze("Apple profits surge to record high", "AAPL")
+    assert sig.model_version == "risk-engine-v1.0-deterministic"
+
+def test_module_b_credit_stress_bounds(stress_engine):
+    if not hasattr(stress_engine, 'synthetic_credit_portfolio') or not stress_engine.synthetic_credit_portfolio:
+        return # Skip if not loaded
+    
+    res = stress_engine.apply_credit_stress(
+        stress_engine.synthetic_credit_portfolio,
+        pd_multiplier=1.5,
+        lgd_multiplier=1.2,
+        initial_cet1_capital=5_000_000.0,
+        exposure_multiplier=1.0
+    )
+    for r in res:
+        assert 0.0 <= r.stressed_pd <= 1.0
+        assert 0.0 <= r.stressed_lgd <= 1.0
+        assert r.stressed_ecl >= r.baseline_ecl # Since multipliers are > 1
+        assert r.incremental_ecl >= 0
