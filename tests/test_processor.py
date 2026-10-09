@@ -262,3 +262,27 @@ def test_directional_mixed_gains():
     cand = [{"normalized_headline": "nvidia shares fall", "resolved_entities": "NVDA", "document_hash": "hash1", "published_at": datetime.now(timezone.utc).isoformat()}]
     res = dedup.check_duplicate("nvidia shares fall after earlier gains", {"NVDA"}, cand)
     assert res["is_duplicate"] == True
+
+def test_dedup_resolved_entities_list():
+    dedup = SemanticDedup(time_window_hours=24)
+    cand = [{"normalized_headline": "nvidia stock rises", "resolved_entities": ["NVDA", "MSFT"], "document_hash": "hash1", "published_at": datetime.now(timezone.utc).isoformat()}]
+    res = dedup.check_duplicate("nvidia stock rises", {"NVDA"}, cand)
+    assert res["is_duplicate"] == True
+
+def test_dedup_resolved_entities_missing():
+    dedup = SemanticDedup(time_window_hours=24)
+    cand = [{"normalized_headline": "nvidia stock rises", "document_hash": "hash1", "published_at": datetime.now(timezone.utc).isoformat()}]
+    res = dedup.check_duplicate("nvidia stock rises", {"NVDA"}, cand)
+    assert res["is_duplicate"] == True
+
+def test_dedup_resolved_entities_empty_list():
+    dedup = SemanticDedup(time_window_hours=24)
+    cand = [{"normalized_headline": "nvidia stock rises", "resolved_entities": [], "document_hash": "hash1", "published_at": datetime.now(timezone.utc).isoformat()}]
+    res = dedup.check_duplicate("nvidia stock rises", {"NVDA"}, cand)
+    assert res["is_duplicate"] == True
+
+def test_dedup_resolved_entities_multiple_string():
+    dedup = SemanticDedup(time_window_hours=24)
+    cand = [{"normalized_headline": "nvidia stock rises", "resolved_entities": "NVDA,MSFT", "document_hash": "hash1", "published_at": datetime.now(timezone.utc).isoformat()}]
+    res = dedup.check_duplicate("nvidia stock rises", {"NVDA"}, cand)
+    assert res["is_duplicate"] == True

@@ -128,7 +128,13 @@ class SemanticDedup:
         direction = self.get_direction(norm_headline)
         
         for cand in candidates:
-            cand_entities = set(cand.get("resolved_entities", "").split(",")) if cand.get("resolved_entities") else set()
+            raw_entities = cand.get("resolved_entities")
+            if not raw_entities:
+                cand_entities = set()
+            elif isinstance(raw_entities, list):
+                cand_entities = set(raw_entities)
+            else:
+                cand_entities = set(str(raw_entities).split(","))
             
             # Fast rejection: no shared entities (and both have entities)
             if entities and cand_entities and not entities.intersection(cand_entities):
