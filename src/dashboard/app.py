@@ -1,7 +1,4 @@
-import sys
 import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -113,10 +110,11 @@ max_asset, min_asset = cw_series.idxmax(), cw_series.idxmin()
 total_turnover = st.session_state.latest_orders["Trade Value ($)"].sum() if not st.session_state.latest_orders.empty else 0.0
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total AUM", f"${total_val:,.0f}")
-col2.metric("Highest Conviction", f"{max_asset}", f"{cw_series[max_asset]*100:.1f}% wt")
-col3.metric("Lowest Conviction", f"{min_asset}", f"{cw_series[min_asset]*100:.1f}% wt")
-col4.metric("Capital Reallocated", f"${total_turnover:,.0f}")
+col1.metric("Total AUM", f"${total_val:,.0f}", help="Total Assets Under Management (Mark-to-Market)")
+col2.metric("Highest Conviction", f"{max_asset}", f"{cw_series[max_asset]*100:.1f}% wt", help="Asset with the highest active target weight")
+col3.metric("Capital Reallocated", f"${total_turnover:,.0f}", help="Gross turnover / absolute trade value required to rebalance")
+est_txn_cost = total_turnover * 0.0010 # 10 bps synthetic txn cost
+col4.metric("Est. Txn Cost", f"${est_txn_cost:,.0f}", help="Estimated transaction costs at 10 basis points (0.1%) of total turnover")
 
 st.markdown("---")
 
@@ -181,7 +179,7 @@ with tab1:
     with col_chart:
         st.markdown("#### Target vs. Baseline Weight Distribution")
         df_wts = pd.DataFrame([
-            {"Ticker": t, "Target": rebalancer.current_weights[t]*100, "Baseline": 10.0} 
+            {"Ticker": t, "Target": rebalancer.current_weights[t]*100, "Baseline": 100.0 / len(rebalancer.tickers)} 
             for t in rebalancer.tickers
         ])
         fig = go.Figure()
