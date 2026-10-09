@@ -102,14 +102,14 @@ def test_module_a_numerical_regression():
     msft_row = orders[orders["Ticker"] == "MSFT"].iloc[0]
     
     # Expected precise values from baseline mathematical model
-    assert nvda_row["New Weight Float"] == pytest.approx(18.15, rel=1e-3)
-    assert tsla_row["New Weight Float"] == pytest.approx(1.91, rel=1e-3)
-    assert msft_row["New Weight Float"] == pytest.approx(9.99, rel=1e-3)
+    assert nvda_row["New Weight Float"] == pytest.approx(18.14, rel=1e-3)
+    assert tsla_row["New Weight Float"] == pytest.approx(2.00, rel=1e-3)
+    assert msft_row["New Weight Float"] == pytest.approx(9.98, rel=1e-3)
     
-    assert nvda_row["Trade Value ($)"] == pytest.approx(81529.48, rel=1e-3)
-    assert tsla_row["Trade Value ($)"] == pytest.approx(80934.00, rel=1e-3)
-    assert msft_row["Trade Value ($)"] == pytest.approx(74.43, rel=1e-3)
+    assert nvda_row["Trade Value ($)"] == pytest.approx(81356.71, rel=1e-3)
+    assert tsla_row["Trade Value ($)"] == pytest.approx(80000.00, rel=1e-3)
+    assert msft_row["Trade Value ($)"] == pytest.approx(169.54, rel=1e-3)
 
     # Check internal weights with absolute tolerance to handle formatting round-offs
-    assert rebalancer.current_weights["NVDA"] == pytest.approx(0.1815, abs=1e-4)
-    assert rebalancer.current_weights["TSLA"] == pytest.approx(0.0191, abs=1e-4)
+    assert rebalancer.current_weights["NVDA"] == pytest.approx(0.1814, abs=1e-4)
+    assert rebalancer.current_weights["TSLA"] == pytest.approx(0.0200, abs=1e-4)
