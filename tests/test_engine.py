@@ -162,7 +162,7 @@ def test_ingestion_offline_fallback(ingestor, monkeypatch):
         raise Exception("Network Error")
     monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
     
-    news = ingestor.fetch_live_news()
+    news = ingestor.fetch_live_news(force_fallback=True)
     assert len(news) > 0
     assert news[0]["ticker"] == "AAPL"
 

@@ -1,10 +1,7 @@
-# [Project Title] - S&P Global & CRISIL Campus Hackathon
+# Financial Risk Engine - S&P Global & CRISIL Campus Hackathon
 
-**Candidate Name:** [Candidate Name]
-**College Email ID:** [College Email]
-**College / Campus:** [Campus]
-**Demo Video Link:** [YouTube Unlisted Demo Link]
-**Slide Deck Link:** [Presentation Link]
+**Candidate Name:** Basant Bansal
+**College / Campus:** IIIT Pune
 
 ## 1. Project Overview & Problem Statement
 This project is a working risk-intelligence prototype designed to ingest financial news, semantically deduplicate events, and dynamically rebalance a stock index based on real-time and offline macroeconomic stress scenarios. 
@@ -33,7 +30,7 @@ The application pipeline operates through the following stages:
 - **Purpose:** Used strictly to train the offline TF-IDF + Logistic Regression fallback NLP model.
 - **Source:** The repository currently does not preserve authoritative provenance metadata for this file. The file is bundled locally and is used only for training the offline fallback NLP model.
 
-### `data/sample_news.json` (5 records)
+### `data/sample_news.json` (10 records)
 - **Nature:** Synthetic/mock replay data.
 - **Purpose:** Enables deterministic/offline demonstration of the ingestion and risk engine pipeline.
 - **Source:** Explicitly labeled internally as "Replay-Feed".
@@ -73,16 +70,25 @@ streamlit run src/dashboard/app.py
 ```
 *Note: The application can run fully offline in "Offline Crisis Replay" mode if external news or the Groq API are unavailable.*
 
-## 5. Results & Testing
-- **Testing:** The system includes a comprehensive `pytest` suite ensuring correct functioning of semantic deduplication, risk analysis, and mathematical rebalancing. Currently, 72 tests passing.
-- **Validation:** The `historical_backtest.csv` dataset is synthetic validation data containing exactly 5 synthetic validation events. The replay is an isolated event replay, not a cumulative historical portfolio backtesting simulation. The transaction cost is a synthetic configurable assumption. This validation demonstrates deterministic pipeline mechanics and does NOT establish real-world alpha or predictive power.
+## 5. Artifacts & Deliverables
+The following required artifacts are included in the `docs/` directory:
+- **Presentation Deck:** [`docs/presentation.pdf`](docs/presentation.pdf) (7-slide presentation covering the problem, architecture, implementation, and domain impact).
+- **Architecture Diagram:** [`docs/architecture.png`](docs/architecture.png) (High-resolution data flow and system architecture).
+
+## 6. Results & Testing
+- **Testing Command:** Run the comprehensive test suite with branch coverage using:
+  ```bash
+  python -m pytest --cov=src --cov-branch tests/
+  ```
+- **Test Status:** 98 tests passing successfully with 85% branch coverage. This ensures correct functioning of semantic deduplication, risk analysis, live boundary isolation, and mathematical rebalancing constraints.
+- **Validation:** The `historical_backtest.csv` dataset is synthetic validation data containing exactly 10 synthetic validation events. The replay is an isolated event replay, not a cumulative historical portfolio backtesting simulation. The transaction cost is a synthetic configurable assumption. This validation demonstrates deterministic pipeline mechanics and does NOT establish real-world alpha or predictive power.
 - **Functionality:** The dashboard dynamically allocates capital in response to injected news events and properly handles offline operations without relying on live financial APIs.
 - **Performance:** As a prototype, results are qualitative. The system demonstrates immediate algorithmic adjustment to unstructured text inputs and strict deduplication.
 
-## 6. Domain Impact
+## 7. Domain Impact
 By decoupling portfolio rebalancing from traditional price-lagged indicators and directly integrating unstructured NLP, this prototype demonstrates a reactive, event-driven risk mitigation strategy suitable for tactical asset allocation and algorithmic stress testing.
 
-## 7. Repository Structure
+## 8. Repository Structure
 ```
 .
 ├── README.md               # Project documentation
@@ -104,7 +110,7 @@ By decoupling portfolio rebalancing from traditional price-lagged indicators and
 └── tests/                  # Pytest test suite
 ```
 
-## 8. Current Limitations & Reproducibility
+## 9. Current Limitations & Reproducibility
 - **Dataset Provenance:** The origin and licensing for `data/all-data.csv` is not established definitively within the repository.
 - **Deterministic Prices:** Reference prices are synthetic $100 values rather than live market data, ensuring reproducibility at the cost of real-world precision.
 - **Predefined Stress Models:** Macroeconomic stress assumptions and contagion risks are based on predefined historical correlation matrices rather than live calculations.

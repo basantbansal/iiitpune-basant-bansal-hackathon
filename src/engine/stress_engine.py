@@ -10,18 +10,18 @@ class StressEngine:
     """
     def __init__(self):
         # Institutional Risk Profiles for the 10-stock universe
-        # rate_dv01 and spread_dv01 represent the % change in asset price per 100bps move
+        # rate_mod_dur and spread_mod_dur represent the % change in asset price per 100bps (1%) move (Modified Duration)
         self.asset_profiles = {
-            "AAPL":  {"beta": 1.2, "rate_dv01": 2.5, "spread_dv01": 1.5},
-            "MSFT":  {"beta": 1.1, "rate_dv01": 2.0, "spread_dv01": 1.0},
-            "NVDA":  {"beta": 2.2, "rate_dv01": 4.5, "spread_dv01": 2.0}, # High growth, high rate sensitivity
-            "AMZN":  {"beta": 1.5, "rate_dv01": 3.0, "spread_dv01": 2.0},
-            "GOOGL": {"beta": 1.1, "rate_dv01": 2.0, "spread_dv01": 1.0},
-            "META":  {"beta": 1.4, "rate_dv01": 2.5, "spread_dv01": 1.5},
-            "TSLA":  {"beta": 2.4, "rate_dv01": 5.0, "spread_dv01": 3.0},
-            "JPM":   {"beta": 1.0, "rate_dv01": -3.0, "spread_dv01": 4.0}, # Banks benefit from rate hikes (negative DV01)
-            "JNJ":   {"beta": 0.5, "rate_dv01": 1.0, "spread_dv01": 0.5},  # Defensive
-            "XOM":   {"beta": 0.8, "rate_dv01": 0.5, "spread_dv01": 1.0},  # Value/Commodity
+            "AAPL":  {"beta": 1.2, "rate_mod_dur": 2.5, "spread_mod_dur": 1.5},
+            "MSFT":  {"beta": 1.1, "rate_mod_dur": 2.0, "spread_mod_dur": 1.0},
+            "NVDA":  {"beta": 2.2, "rate_mod_dur": 4.5, "spread_mod_dur": 2.0}, # High growth, high rate sensitivity
+            "AMZN":  {"beta": 1.5, "rate_mod_dur": 3.0, "spread_mod_dur": 2.0},
+            "GOOGL": {"beta": 1.1, "rate_mod_dur": 2.0, "spread_mod_dur": 1.0},
+            "META":  {"beta": 1.4, "rate_mod_dur": 2.5, "spread_mod_dur": 1.5},
+            "TSLA":  {"beta": 2.4, "rate_mod_dur": 5.0, "spread_mod_dur": 3.0},
+            "JPM":   {"beta": 1.0, "rate_mod_dur": -3.0, "spread_mod_dur": 4.0}, # Banks benefit from rate hikes (negative mod_dur)
+            "JNJ":   {"beta": 0.5, "rate_mod_dur": 1.0, "spread_mod_dur": 0.5},  # Defensive
+            "XOM":   {"beta": 0.8, "rate_mod_dur": 0.5, "spread_mod_dur": 1.0},  # Value/Commodity
         }
 
         # Predefined Macro Scenarios
@@ -77,13 +77,13 @@ class StressEngine:
         results = []
 
         for ticker, weight in current_weights.items():
-            profile = self.asset_profiles.get(ticker, {"beta": 1.0, "rate_dv01": 1.0, "spread_dv01": 1.0})
+            profile = self.asset_profiles.get(ticker, {"beta": 1.0, "rate_mod_dur": 1.0, "spread_mod_dur": 1.0})
             notional = total_aum * weight
 
             # P&L Math
             equity_pnL = notional * (profile["beta"] * shock["equity_shock"])
-            rate_pnl = notional * (-profile["rate_dv01"] * (shock["rate_shock_bps"] / 10000.0))
-            spread_pnl = notional * (-profile["spread_dv01"] * (shock["spread_shock_bps"] / 10000.0))
+            rate_pnl = notional * (-profile["rate_mod_dur"] * (shock["rate_shock_bps"] / 10000.0))
+            spread_pnl = notional * (-profile["spread_mod_dur"] * (shock["spread_shock_bps"] / 10000.0))
 
             total_pnl = equity_pnL + rate_pnl + spread_pnl
             stress_value = notional + total_pnl

@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
+data/risk_data.db
+.coverage
+.pytest_cache/
+*.egg-info/

@@ -113,46 +113,30 @@ class IndexRebalancer:
             target_w = base_w + (self.alpha_tilt * z_scores[idx])
             raw_weights[ticker] = target_w
 
-        # 4. Simplex Normalization and Bound Enforcement
-        # We iteratively enforce bounds and re-normalize until convergence
-        updated_weights = raw_weights.copy()
-        
-        for _ in range(20):
-            # Enforce max/min
-            for t in self.tickers:
-                updated_weights[t] = max(self.min_weight, min(self.max_weight, updated_weights[t]))
-                
-            # Normalize
-            total = sum(updated_weights.values())
-            
-            # Re-distribute the excess/deficit only to assets not constrained
-            # A simple approximation is to just divide, but it might break bounds again.
-            # However, repeating this loop limits violations asymptotically.
-            for t in self.tickers:
-                updated_weights[t] = updated_weights[t] / total
-            
-            # Check if all satisfy constraints with a small tolerance
-            all_valid = all(self.min_weight - 1e-6 <= w <= self.max_weight + 1e-6 for w in updated_weights.values())
-            if all_valid and abs(sum(updated_weights.values()) - 1.0) < 1e-6:
+        # 4. Simplex Normalization and Bound Enforcement (Order-Independent Projection)
+        tickers = list(self.tickers)
+        x = np.array([raw_weights[t] for t in tickers])
+
+        for _ in range(100):
+            x = np.clip(x, self.min_weight, self.max_weight)
+            diff = 1.0 - np.sum(x)
+            if abs(diff) < 1e-8:
                 break
-                
-        # Hard cap to ensure strictly within bounds if tolerance is exceeded
-        final_weights = {t: max(self.min_weight, min(self.max_weight, w)) for t, w in updated_weights.items()}
-        # To guarantee sum=1.0, adjust the largest unconstrained weight
-        diff = 1.0 - sum(final_weights.values())
-        if abs(diff) > 1e-8:
-            # Add difference to an asset that can take it
-            for t in self.tickers:
-                if diff > 0 and final_weights[t] < self.max_weight:
-                    addable = min(self.max_weight - final_weights[t], diff)
-                    final_weights[t] += addable
-                    diff -= addable
-                elif diff < 0 and final_weights[t] > self.min_weight:
-                    subbable = min(final_weights[t] - self.min_weight, -diff)
-                    final_weights[t] -= subbable
-                    diff += subbable
-                if abs(diff) < 1e-8:
-                    break
+
+            if diff > 0:
+                unconstrained = x < self.max_weight - 1e-8
+            else:
+                unconstrained = x > self.min_weight + 1e-8
+
+            if not np.any(unconstrained):
+                break
+
+            x[unconstrained] += diff / np.sum(unconstrained)
+
+        if abs(1.0 - np.sum(x)) > 1e-6:
+            raise ValueError(f"Failed to converge to valid simplex constraints. Sum is {np.sum(x)}")
+
+        final_weights = {t: float(x[i]) for i, t in enumerate(tickers)}
 
         # 5. Generate Execution Orders
         rows = []

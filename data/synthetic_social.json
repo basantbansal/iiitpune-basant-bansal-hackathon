@@ -1,0 +1,14 @@
+[
+    {
+        "ticker": "AAPL",
+        "headline": "Lots of bearish chatter around AAPL supply chain issues in Asia today.",
+        "source": "Synthetic-Social-Feed (Demo Data)",
+        "published_at": "2024-01-01T12:00:00Z"
+    },
+    {
+        "ticker": "TSLA",
+        "headline": "Just saw the new factory upgrade, TSLA is going to soar this quarter!",
+        "source": "Synthetic-Social-Feed (Demo Data)",
+        "published_at": "2024-01-01T13:00:00Z"
+    }
+]

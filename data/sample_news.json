@@ -28,5 +28,35 @@
     "headline": "JPMorgan faces regulatory scrutiny over potential systemic credit exposure and margin failures.",
     "source": "Replay-Feed",
     "published_at": "2026-10-06T08:45:00Z"
+  },
+  {
+    "ticker": "AAPL",
+    "headline": "Apple warns of massive supply chain disruptions in Asia affecting Q4 smartphone deliveries.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T12:30:00Z"
+  },
+  {
+    "ticker": "META",
+    "headline": "Meta announces definitive agreement to acquire European VR studio to expand metaverse footprint.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T13:00:00Z"
+  },
+  {
+    "ticker": "AMZN",
+    "headline": "Amazon Web Services suffers severe cybersecurity breach exposing consumer data, triggering investigations.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T13:45:00Z"
+  },
+  {
+    "ticker": "GOOGL",
+    "headline": "Alphabet reports mixed earnings; advertising revenue flat while cloud margins improve slightly.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T14:10:00Z"
+  },
+  {
+    "ticker": "JNJ",
+    "headline": "Johnson & Johnson pauses clinical trials due to unforeseen adverse effects in late-stage testing.",
+    "source": "Replay-Feed",
+    "published_at": "2026-10-06T15:20:00Z"
   }
 ]
