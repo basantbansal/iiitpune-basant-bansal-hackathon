@@ -50,8 +50,8 @@ The application pipeline operates through the following stages:
 
 ```bash
 # 1. Clone the repository
-git clone <repository-url>
-cd <repository-directory>
+git clone https://github.com/basantbansal/iiitpune-basant-bansal-hackathon
+cd iiitpune-basant-bansal-hackathon
 
 # 2. Create and activate a virtual environment
 python3 -m venv venv
