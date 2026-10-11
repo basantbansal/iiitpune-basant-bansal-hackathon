@@ -72,7 +72,9 @@ All prototype datasets reside in the `data/` directory. Their contents, formats,
 
 ---
 
-## 4. Quickstart & Installation
+## 4. Quickstart & Installation 
+
+### Running Locally on VSCode 
 
 ### Prerequisites
 - Python 3.10+ (tested on Python 3.14)
