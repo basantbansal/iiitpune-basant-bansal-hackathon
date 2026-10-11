@@ -3,7 +3,7 @@
 - **Candidate Name:** Basant Bansal
 - **College Email ID:** 112416017@ece.iiitp.ac.in
 - **College / Campus:** Indian Institute of Information Technology, Pune (IIIT Pune)
-- **Demo Video Link:** [Demo Video Link]
+- **Demo Video Link:** https://www.youtube.com/watch?v=2eu3-yfpeB4
 - **Slide Deck Link:** [docs/presentation.pdf](docs/presentation.pdf)
 
 ---
