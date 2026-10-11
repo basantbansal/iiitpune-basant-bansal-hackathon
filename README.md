@@ -1,7 +1,7 @@
 # AI Financial Risk & Portfolio Intelligence Platform - S&P Global & Crisil Campus Hackathon
 
 - **Candidate Name:** Basant Bansal
-- **College Email ID:** 112416017
+- **College Email ID:** 112416017@ece.iiitp.ac.in
 - **College / Campus:** Indian Institute of Information Technology, Pune (IIIT Pune)
 - **Demo Video Link:** [Demo Video Link]
 - **Slide Deck Link:** [docs/presentation.pdf](docs/presentation.pdf)
