@@ -92,8 +92,10 @@ cd iiitpune-basant-bansal-hackathon
 # Create and activate a Python virtual environment
 python3 -m venv venv
 source venv/bin/activate
+python -m pip install --upgrade pip
 
 # Install backend dependencies
+
 pip install -r requirements.txt
 
 # (Optional) Configure environment variables
