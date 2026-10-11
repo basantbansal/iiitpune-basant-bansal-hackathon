@@ -14,6 +14,8 @@ class RiskSignal:
     confidence: float  # [0.0, 1.0]
     evidence_span: str  # Traceability snippet
     model_version: str = "risk-engine-v1.0-deterministic"
+    inference_source: str = "fallback_rules"
+    is_shared_headline: bool = False
 
     def to_dict(self):
         return asdict(self)

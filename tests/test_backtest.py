@@ -13,6 +13,14 @@ def dummy_csv_data():
         {"event_id": "EVT_001", "event_timestamp": "2023-01-01T10:00:00Z", "ticker": "MSFT", "headline": "Microsoft launches something", "price_t0": "250.0", "price_t1": "260.0"},
     ]
 
+@pytest.fixture(autouse=True)
+def mock_base_prices(mocker):
+    mocker.patch("src.validation.backtest.PriceProvider.get_prices", return_value={
+        "AAPL": 100.0, "MSFT": 100.0, "NVDA": 100.0, "AMZN": 100.0, 
+        "GOOGL": 100.0, "META": 100.0, "TSLA": 100.0, "JPM": 100.0, 
+        "JNJ": 100.0, "XOM": 100.0
+    })
+
 @pytest.fixture
 def temp_csv_file(dummy_csv_data):
     fd, path = tempfile.mkstemp(suffix=".csv")

@@ -5,3 +5,9 @@ streamlit>=1.30.0
 groq>=0.4.2
 plotly>=5.18.0
 python-dotenv
+yfinance>=0.2.0
+
+fastapi
+uvicorn
+pydantic
+httpx

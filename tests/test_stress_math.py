@@ -1,5 +1,5 @@
 import pytest
-from src.engine.stress_engine import StressEngine
+from src.stress_testing.stress_engine import StressEngine
 import math
 
 def test_stress_math_hand_calculation():

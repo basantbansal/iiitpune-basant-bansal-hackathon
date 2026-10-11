@@ -47,6 +47,7 @@ class StressEngine:
         # Synthetic Banking Book Portfolio Assumptions
         self.synthetic_initial_cet1_capital = 5_000_000.0
         self.synthetic_credit_portfolio = self._load_credit_portfolio()
+        self.synthetic_banking_book = self._load_banking_book()
 
     def _load_credit_portfolio(self) -> List[CreditExposure]:
         import json
@@ -65,9 +66,165 @@ class StressEngine:
                         risk_weight=item["risk_weight"]
                     )
                     exposures.append(exp)
-        except Exception as e:
+        except Exception:
             pass
         return exposures
+
+    def _load_banking_book(self) -> List[Dict]:
+        import json
+        import os
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "synthetic_banking_book.json")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return [item for item in data if not str(item.get("id", "")).startswith("_")]
+        except Exception:
+            return []
+
+    def run_banking_book_stress(self, scenario_name: str) -> dict:
+        if scenario_name not in self.scenarios:
+            raise ValueError(f"Scenario '{scenario_name}' not found.")
+
+        shock = self.scenarios[scenario_name]
+        positions = self.synthetic_banking_book if hasattr(self, "synthetic_banking_book") and self.synthetic_banking_book else self._load_banking_book()
+
+        position_results = []
+        for pos in positions:
+            asset_class = pos.get("asset_class", "")
+            pos_id = pos.get("id", "")
+            name = pos.get("name", pos_id)
+            notional = float(pos.get("notional", 0.0))
+
+            if asset_class == "Corporate Loans":
+                pre_val = notional
+                pd_val = float(pos.get("pd", 0.02))
+                lgd_val = float(pos.get("lgd", 0.40))
+                spread_dur = float(pos.get("spread_duration", 3.0))
+                pd_mult = float(shock.get("pd_multiplier", 1.0))
+                delta_pd = min(1.0, pd_val * pd_mult) - pd_val
+                el_pnl = -pre_val * delta_pd * lgd_val
+                spread_pnl = -pre_val * spread_dur * (shock["spread_shock_bps"] / 10000.0)
+                total_pnl = el_pnl + spread_pnl
+                post_val = pre_val + total_pnl
+                drawdown_pct = (total_pnl / pre_val) * 100.0 if pre_val > 0 else 0.0
+
+                position_results.append({
+                    "id": pos_id,
+                    "name": name,
+                    "asset_class": asset_class,
+                    "sector_rating": pos.get("sector", "Corporate"),
+                    "notional": notional,
+                    "pre_shock_value": round(pre_val, 2),
+                    "pnl": round(total_pnl, 2),
+                    "post_shock_value": round(post_val, 2),
+                    "drawdown_pct": round(drawdown_pct, 2),
+                    "details": f"EL loss: ${abs(el_pnl):,.2f}, Spread loss: ${abs(spread_pnl):,.2f}"
+                })
+
+            elif asset_class == "Fixed Income Bonds":
+                pre_val = notional
+                mod_dur = float(pos.get("mod_duration", 5.0))
+                spread_dur = float(pos.get("spread_duration", 0.0))
+                rate_pnl = -pre_val * mod_dur * (shock["rate_shock_bps"] / 10000.0)
+                spread_pnl = -pre_val * spread_dur * (shock["spread_shock_bps"] / 10000.0)
+                total_pnl = rate_pnl + spread_pnl
+                post_val = pre_val + total_pnl
+                drawdown_pct = (total_pnl / pre_val) * 100.0 if pre_val > 0 else 0.0
+
+                position_results.append({
+                    "id": pos_id,
+                    "name": name,
+                    "asset_class": asset_class,
+                    "sector_rating": pos.get("rating", "IG"),
+                    "notional": notional,
+                    "pre_shock_value": round(pre_val, 2),
+                    "pnl": round(total_pnl, 2),
+                    "post_shock_value": round(post_val, 2),
+                    "drawdown_pct": round(drawdown_pct, 2),
+                    "details": f"Rate P&L: ${rate_pnl:,.2f}, Spread P&L: ${spread_pnl:,.2f}"
+                })
+
+            elif asset_class == "Interest Rate Swaps":
+                pre_val = float(pos.get("pre_shock_value", 0.0))
+                signed_dv01 = float(pos.get("dv01", 0.0))
+                total_pnl = signed_dv01 * float(shock["rate_shock_bps"])
+                post_val = pre_val + total_pnl
+                drawdown_pct = (total_pnl / notional) * 100.0 if notional > 0 else 0.0
+
+                position_results.append({
+                    "id": pos_id,
+                    "name": name,
+                    "asset_class": asset_class,
+                    "sector_rating": pos.get("counterparty", "OTC Derivative"),
+                    "notional": notional,
+                    "pre_shock_value": round(pre_val, 2),
+                    "pnl": round(total_pnl, 2),
+                    "post_shock_value": round(post_val, 2),
+                    "drawdown_pct": round(drawdown_pct, 2),
+                    "details": f"DV01: ${signed_dv01:+,.0f}/bp × {shock['rate_shock_bps']} bps"
+                })
+
+            elif asset_class == "Equity Holdings":
+                pre_val = notional
+                beta = float(pos.get("beta", 1.0))
+                total_pnl = pre_val * (beta * float(shock["equity_shock"]))
+                post_val = pre_val + total_pnl
+                drawdown_pct = (total_pnl / pre_val) * 100.0 if pre_val > 0 else 0.0
+
+                position_results.append({
+                    "id": pos_id,
+                    "name": name,
+                    "asset_class": asset_class,
+                    "sector_rating": pos.get("sector", "Equity"),
+                    "notional": notional,
+                    "pre_shock_value": round(pre_val, 2),
+                    "pnl": round(total_pnl, 2),
+                    "post_shock_value": round(post_val, 2),
+                    "drawdown_pct": round(drawdown_pct, 2),
+                    "details": f"Beta {beta:.2f} × Equity Shock {shock['equity_shock']*100:+.0f}%"
+                })
+
+        classes = ["Corporate Loans", "Fixed Income Bonds", "Interest Rate Swaps", "Equity Holdings"]
+        by_asset_class = []
+        total_pnl_all = sum(p["pnl"] for p in position_results)
+
+        for ac in classes:
+            ac_positions = [p for p in position_results if p["asset_class"] == ac]
+            if not ac_positions:
+                continue
+            ac_pre = sum(p["pre_shock_value"] for p in ac_positions)
+            ac_pnl = sum(p["pnl"] for p in ac_positions)
+            ac_post = ac_pre + ac_pnl
+            ac_notional = sum(p["notional"] for p in ac_positions)
+            base_for_pct = ac_pre if ac_pre > 0 else ac_notional
+            ac_pct = (ac_pnl / base_for_pct * 100.0) if base_for_pct > 0 else 0.0
+            share_loss = (ac_pnl / total_pnl_all * 100.0) if total_pnl_all != 0 else 0.0
+
+            by_asset_class.append({
+                "asset_class": ac,
+                "position_count": len(ac_positions),
+                "notional": round(ac_notional, 2),
+                "pre_shock_value": round(ac_pre, 2),
+                "pnl": round(ac_pnl, 2),
+                "post_shock_value": round(ac_post, 2),
+                "drawdown_pct": round(ac_pct, 2),
+                "share_of_loss_pct": round(share_loss, 2)
+            })
+
+        total_pre_val = sum(c["pre_shock_value"] for c in by_asset_class)
+        total_pnl_val = sum(c["pnl"] for c in by_asset_class)
+        total_post_val = total_pre_val + total_pnl_val
+        total_dd_pct = (total_pnl_val / total_pre_val * 100.0) if total_pre_val > 0 else 0.0
+
+        return {
+            "total_pre_shock_value": round(total_pre_val, 2),
+            "total_pnl": round(total_pnl_val, 2),
+            "total_post_shock_value": round(total_post_val, 2),
+            "total_drawdown_pct": round(total_dd_pct, 2),
+            "invariant_holds": abs(total_post_val - (total_pre_val + total_pnl_val)) < 1e-4,
+            "by_asset_class": by_asset_class,
+            "positions": position_results
+        }
 
     def run_scenario(self, current_weights: dict, total_aum: float, scenario_name: str) -> dict:
         if scenario_name not in self.scenarios:

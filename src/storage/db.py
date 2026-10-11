@@ -72,6 +72,145 @@ class SignalDatabase:
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_published_at ON documents(published_at)"
             )
+
+            # Configuration table
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS configuration (
+                    id INTEGER PRIMARY KEY,
+                    initial_capital REAL NOT NULL,
+                    alpha_tilt REAL NOT NULL,
+                    data_mode TEXT NOT NULL,
+                    max_items INTEGER NOT NULL
+                )
+                """
+            )
+
+            # Holdings table for persistent portfolio accounting
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS holdings (
+                    ticker TEXT PRIMARY KEY,
+                    shares REAL NOT NULL
+                )
+                """
+            )
+
+            # Target weight history table for tracking rebalance trajectory over scans
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS target_weight_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_time TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    target_weight REAL NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_target_weights_scan ON target_weight_history(scan_time, ticker)"
+            )
+
+            conn.commit()
+
+    def get_config(self) -> dict:
+        """Fetches the persisted configuration if it exists."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT initial_capital, alpha_tilt, data_mode, max_items FROM configuration WHERE id = 1")
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "initial_capital": row[0],
+                    "alpha_tilt": row[1],
+                    "data_mode": row[2],
+                    "max_items": row[3]
+                }
+            return None
+
+    def save_config(self, config_data: dict):
+        """Saves the configuration to the database."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO configuration 
+                (id, initial_capital, alpha_tilt, data_mode, max_items)
+                VALUES (1, ?, ?, ?, ?)
+                """,
+                (
+                    config_data["initial_capital"],
+                    config_data["alpha_tilt"],
+                    config_data["data_mode"],
+                    config_data["max_items"]
+                )
+            )
+            conn.commit()
+
+    def get_holdings(self) -> dict:
+        """Fetches persisted portfolio holdings."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ticker, shares FROM holdings")
+            rows = cursor.fetchall()
+            return {r[0]: r[1] for r in rows}
+
+    def save_holdings(self, holdings: dict):
+        """Saves current portfolio holdings."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for ticker, shares in holdings.items():
+                if shares is not None:
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO holdings (ticker, shares) VALUES (?, ?)",
+                        (ticker, float(shares))
+                    )
+            conn.commit()
+
+    def save_target_weights_history(self, scan_time: str, target_weights: dict):
+        """Saves constituent target weights for a given scan timestamp."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for ticker, weight in target_weights.items():
+                if weight is not None:
+                    cursor.execute(
+                        """
+                        INSERT INTO target_weight_history (scan_time, ticker, target_weight)
+                        VALUES (?, ?, ?)
+                        """,
+                        (scan_time, ticker, float(weight))
+                    )
+            conn.commit()
+
+    def get_target_weights_history(self) -> list:
+        """Fetches full target weights history ordered by scan_time ascending."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT scan_time, ticker, target_weight
+                FROM target_weight_history
+                ORDER BY scan_time ASC, ticker ASC
+                """
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "scan_time": r[0],
+                    "ticker": r[1],
+                    "target_weight": r[2]
+                }
+                for r in rows
+            ]
+
+    def clear_runtime_data(self):
+        """Clears all runtime signals and documents, preserving configuration."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM risk_signals")
+            cursor.execute("DELETE FROM documents")
+            cursor.execute("DELETE FROM holdings")
+            cursor.execute("DELETE FROM target_weight_history")
             conn.commit()
 
     def get_recent_documents(self, hours: int = 24) -> list:
@@ -175,3 +314,50 @@ class SignalDatabase:
                 ),
             )
             conn.commit()
+    def get_signal(self, article_hash: str) -> dict:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT ticker, event_type, sentiment, impact, confidence, evidence, model_version, headline, source, published_at FROM risk_signals WHERE article_hash = ?", (article_hash,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "entity": row[0],
+                    "event_classification": row[1],
+                    "sentiment_score": row[2],
+                    "impact_score": row[3],
+                    "confidence": row[4],
+                    "evidence_span": row[5],
+                    "model_version": row[6],
+                    "headline": row[7],
+                    "source": row[8],
+                    "published_at": row[9],
+                    "article_hash": article_hash
+                }
+            return None
+
+    def get_all_signals(self) -> list:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT ticker, event_type, sentiment, impact, confidence, evidence, model_version, headline, source, published_at, article_hash FROM risk_signals ORDER BY published_at ASC, article_hash ASC"
+            )
+            rows = cursor.fetchall()
+            signals = []
+            for row in rows:
+                signals.append({
+                    "entity": row[0],
+                    "ticker": row[0],
+                    "event_classification": row[1],
+                    "sentiment_score": row[2],
+                    "impact_score": row[3],
+                    "confidence": row[4],
+                    "evidence_span": row[5],
+                    "model_version": row[6],
+                    "headline": row[7],
+                    "source": row[8],
+                    "published_at": row[9],
+                    "article_hash": row[10]
+                })
+            return signals

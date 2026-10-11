@@ -1,6 +1,6 @@
 import pytest
 from src.engine.schemas import CreditExposure
-from src.engine.stress_engine import StressEngine
+from src.stress_testing.stress_engine import StressEngine
 
 def test_credit_exposure_validation():
     # Valid

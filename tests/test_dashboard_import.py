@@ -3,12 +3,12 @@ import sys
 
 def test_dashboard_imports_cleanly():
     """
-    Verifies that the dashboard can be imported as a proper module 
-    without relying on sys.path.append hacks.
+    Verifies that the new React+FastAPI backend can be imported as proper modules.
+    Replaces the legacy test that imported the retired Streamlit app.
     """
-    # Temporarily clean any caching
-    if "src.dashboard.app" in sys.modules:
-        del sys.modules["src.dashboard.app"]
+    if "src.api.main" in sys.modules:
+        del sys.modules["src.api.main"]
         
-    import src.dashboard.app
-    assert src.dashboard.app is not None
+    import src.api.main
+    import src.api.routes
+    assert src.api.main.app is not None

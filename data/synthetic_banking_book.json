@@ -1,0 +1,134 @@
+[
+  {
+    "_disclaimer": "Illustrative Wholesale Banking Portfolio for S&P Global & CRISIL Stress Testing demonstration only. Synthetic positions across Corporate Loans, Fixed Income Bonds, Interest Rate Swaps, and Equities.",
+    "id": "LOAN_TECH_01",
+    "asset_class": "Corporate Loans",
+    "name": "OmniTech Cloud Infrastructure Senior Term Loan",
+    "sector": "Technology",
+    "notional": 2500000.0,
+    "pd": 0.015,
+    "lgd": 0.45,
+    "spread_duration": 3.5,
+    "risk_weight": 1.0
+  },
+  {
+    "id": "LOAN_IND_02",
+    "asset_class": "Corporate Loans",
+    "name": "Apex Advanced Industrials Revolving Credit Facility",
+    "sector": "Industrials",
+    "notional": 3000000.0,
+    "pd": 0.025,
+    "lgd": 0.40,
+    "spread_duration": 4.0,
+    "risk_weight": 1.0
+  },
+  {
+    "id": "LOAN_ENERGY_03",
+    "asset_class": "Corporate Loans",
+    "name": "Gulfstream Offshore Energy Secured Loan",
+    "sector": "Energy",
+    "notional": 2000000.0,
+    "pd": 0.030,
+    "lgd": 0.50,
+    "spread_duration": 3.0,
+    "risk_weight": 1.0
+  },
+  {
+    "id": "LOAN_HLTH_04",
+    "asset_class": "Corporate Loans",
+    "name": "BioVance Therapeutics Syndicated Facility",
+    "sector": "Healthcare",
+    "notional": 1500000.0,
+    "pd": 0.010,
+    "lgd": 0.35,
+    "spread_duration": 2.5,
+    "risk_weight": 0.75
+  },
+  {
+    "id": "BOND_US_10Y_01",
+    "asset_class": "Fixed Income Bonds",
+    "name": "US Treasury Benchmark 10-Year Note",
+    "rating": "AAA",
+    "notional": 5000000.0,
+    "mod_duration": 7.8,
+    "spread_duration": 0.0
+  },
+  {
+    "id": "BOND_CORP_IG_02",
+    "asset_class": "Fixed Income Bonds",
+    "name": "Global Financial Group Investment Grade Senior Notes",
+    "rating": "A-",
+    "notional": 3500000.0,
+    "mod_duration": 5.2,
+    "spread_duration": 5.0
+  },
+  {
+    "id": "BOND_CORP_HY_03",
+    "asset_class": "Fixed Income Bonds",
+    "name": "Vanguard High Yield Corporate Debt",
+    "rating": "BB",
+    "notional": 2000000.0,
+    "mod_duration": 3.8,
+    "spread_duration": 4.2
+  },
+  {
+    "id": "BOND_TECH_SENIOR_04",
+    "asset_class": "Fixed Income Bonds",
+    "name": "AlphaTech Enterprise Senior Notes",
+    "rating": "BBB+",
+    "notional": 2500000.0,
+    "mod_duration": 4.5,
+    "spread_duration": 4.5
+  },
+  {
+    "id": "IRS_PAY_5Y_01",
+    "asset_class": "Interest Rate Swaps",
+    "name": "5Y Payer Swap (Pay Fixed / Receive Floating SOFR)",
+    "counterparty": "Barclays Capital",
+    "notional": 10000000.0,
+    "dv01": 4200.0,
+    "pre_shock_value": 0.0
+  },
+  {
+    "id": "IRS_REC_10Y_02",
+    "asset_class": "Interest Rate Swaps",
+    "name": "10Y Receiver Swap (Receive Fixed / Pay Floating SOFR)",
+    "counterparty": "JPMorgan Chase",
+    "notional": 8000000.0,
+    "dv01": -6800.0,
+    "pre_shock_value": 0.0
+  },
+  {
+    "id": "IRS_REC_3Y_03",
+    "asset_class": "Interest Rate Swaps",
+    "name": "3Y Receiver Swap (Receive Fixed / Pay Floating SOFR)",
+    "counterparty": "Morgan Stanley",
+    "notional": 5000000.0,
+    "dv01": -1400.0,
+    "pre_shock_value": 0.0
+  },
+  {
+    "id": "EQ_TECH_01",
+    "asset_class": "Equity Holdings",
+    "name": "Enterprise Cloud & Semiconductor Equity Basket",
+    "sector": "Technology",
+    "notional": 4000000.0,
+    "beta": 1.25
+  },
+  {
+    "id": "EQ_FIN_02",
+    "asset_class": "Equity Holdings",
+    "name": "Diversified Commercial Banking Equity Basket",
+    "sector": "Financials",
+    "notional": 3000000.0,
+    "beta": 1.10
+  },
+  {
+    "id": "EQ_DEF_03",
+    "asset_class": "Equity Holdings",
+    "name": "Defensive Infrastructure & Energy Equity Basket",
+    "sector": "Infrastructure",
+    "notional": 2000000.0,
+    "beta": 0.65
+  }
+]

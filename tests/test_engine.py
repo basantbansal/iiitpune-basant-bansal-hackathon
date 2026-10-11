@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from src.engine.risk_engine import RiskEngine
 from src.rebalancer.index_rebalancer import IndexRebalancer
-from src.engine.stress_engine import StressEngine
+from src.stress_testing.stress_engine import StressEngine
 from src.storage.db import SignalDatabase
 from src.engine.ingestion import MarketNewsIngestion
 from src.engine.schemas import RiskSignal
