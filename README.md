@@ -19,8 +19,12 @@ Conventional indices equal-weight or cap-weight their holdings without forward-l
 We developed an institutional-grade, event-driven risk analytics and portfolio intelligence platform combining:
 1. **Real-Time Dual-Source Ingestion**: Ingests unstructured financial news simultaneously from two independent live sources (Google News RSS & Yahoo Finance RSS) with cryptographic deduplication, plus a deterministic offline crisis replay mode.
 2. **Explainable Hybrid NLP Risk Engine**: Employs an ultra-fast Groq LLaMA 3.3 70B model (structured JSON mode, temperature=0.0) with an automatic, zero-dependency finance-aware lexicon rule fallback with negation, contrastive clause handling, and conservative abstention.
-3. **Module A — Tactical Index Rebalancer**: Applies alpha tilts to a 10-constituent mega-cap universe ($2,000,000 baseline AUM). Enforces strict tracking error ($\pm 5$ percentage points: $5.0\%$ to $15.0\%$) and simplex ($\sum w_i = 1.0$) bounds. Enforces the core invariant that **absence of news is not negative sentiment** (unaffected stocks preserve their $10.0\%$ baseline weight). Produces an exact share reconciliation order ledger with honest $10\text{ bps}$ transaction fee accounting and multi-scan trajectory history.
-4. **Module B — Macro & Credit Stress Testing Engine**: Evaluates portfolio resilience across 3 historical/hypothetical macro scenarios (2022 Fed Tightening Shock, Systemic Credit Crunch, Tech Bubble Burst). Evaluates a 14-position Wholesale Banking Book spanning Corporate Loans, Fixed Income Bonds, Interest Rate Swaps, and Equities. Automatically triggers targeted scenarios when high-impact events ($\text{Impact} \ge 7$) are detected. Enforces the strict mathematical invariant: $\text{Post-Shock Value} \equiv \text{Pre-Shock Value} + \sum \text{Position P\&L}$.
+3. **Module A — Tactical Index Rebalancer**: Applies alpha tilts to a 10-constituent mega-cap universe (\$2,000,000 baseline AUM). Enforces strict tracking error ($\pm 5$ percentage points: $5.0\%$ to $15.0\%$) and simplex ($\sum w_i = 1.0$) bounds. Enforces the core invariant that **absence of news is not negative sentiment** (unaffected stocks preserve their $10.0\%$ baseline weight). Produces an exact share reconciliation order ledger with honest $10\text{ bps}$ transaction fee accounting and multi-scan trajectory history.
+4. **Module B — Macro & Credit Stress Testing Engine**: Evaluates portfolio resilience across 3 historical/hypothetical macro scenarios (2022 Fed Tightening Shock, Systemic Credit Crunch, Tech Bubble Burst). Evaluates a 14-position Wholesale Banking Book spanning Corporate Loans, Fixed Income Bonds, Interest Rate Swaps, and Equities. Automatically triggers targeted scenarios when high-impact events ($\text{Impact} \ge 7$) are detected. Enforces the strict mathematical invariant:
+
+   $$
+   \text{Post-Shock Value} \equiv \text{Pre-Shock Value} + \sum \text{Position P\\&L}
+   $$
 
 > **Regulatory Disclaimer:** This application is an academic prototype developed exclusively for the S&P Global & CRISIL Campus Hackathon 2026 for demonstration and architectural evaluation. It does not constitute investment advice or production automated execution.
 
@@ -139,8 +143,8 @@ pytest tests/ -v
    - **Absence of News $\neq$ Negative Sentiment**: Constituents with no new usable signals strictly preserve their $10.0\%$ baseline weight.
    - **Strict Hard Bounds**: Target allocations are strictly bounded to $[5.0\%, 15.0\%]$ ($\text{Baseline} \pm 5\text{ pp}$) with simplex renormalization ($\sum w_i = 1.0$).
    - **Execution Reconciliation**: $\text{Post-Trade Shares} \equiv \text{Pre-Trade Shares} + \text{Signed Order Qty}$.
-   - **Transparent Fee Accounting**: $10\text{ bps}$ applied to gross traded volume using standard financial half-up rounding ($88,445 \times 0.0010 = \$88.45$).
-   - **Stress Testing Balance Invariant**: $\text{Post-Shock Value} \equiv \text{Pre-Shock Value} + \sum \text{Position P\&L}$ verified across all asset classes and scenarios.
+   - **Transparent Fee Accounting**: $10\text{ bps}$ applied to gross traded volume using standard financial half-up rounding $(\$88,445 \times 0.0010 = \$88.45)$.
+   - **Stress Testing Balance Invariant**: $\text{Post-Shock Value} \equiv \text{Pre-Shock Value} + \sum \text{Position P\\&L}$ verified across all asset classes and scenarios.
 2. **Multi-Asset Wholesale Banking Book**:
    - Evaluates 14 positions across Corporate Loans (ECL + spread), Fixed Income Bonds (duration + spread), Interest Rate Swaps (DV01), and Equities (Beta).
    - Provides an auditable By-Asset-Class Summary Table directly on the user interface.
