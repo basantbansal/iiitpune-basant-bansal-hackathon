@@ -169,10 +169,10 @@ export default function Dashboard() {
 
         {/* Tabs */}
         <div className="border-b border-border mb-6">
-          <nav className="-mb-px flex space-x-8">
-            <TabButton active={activeTab === 'portfolio'} onClick={() => setActiveTab('portfolio')} label="📊 Portfolio Allocation" />
-            <TabButton active={activeTab === 'signals'} onClick={() => setActiveTab('signals')} label="📡 Active Risk Signals" />
-            <TabButton active={activeTab === 'stress'} onClick={() => setActiveTab('stress')} label="⚠️ Macro Stress Testing" />
+          <nav className="-mb-px flex space-x-6 sm:space-x-8 overflow-x-auto">
+            <TabButton active={activeTab === 'portfolio'} onClick={() => setActiveTab('portfolio')} label="📊 Module A — Tactical Portfolio Rebalancing" />
+            <TabButton active={activeTab === 'signals'} onClick={() => setActiveTab('signals')} label="📡 Risk Engine — Structured Signals" />
+            <TabButton active={activeTab === 'stress'} onClick={() => setActiveTab('stress')} label="⚠️ Module B — Strategic Banking Stress Testing" />
           </nav>
         </div>
 

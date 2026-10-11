@@ -2,6 +2,8 @@
 marp: true
 theme: default
 paginate: true
+title: "Event-Driven Financial Risk Intelligence"
+author: "Basant Bansal"
 style: |
   section {
     font-size: 22px;
@@ -20,13 +22,8 @@ style: |
   }
 ---
 
-# AI Financial Risk & Portfolio Intelligence Platform
-### S&P Global & CRISIL Campus Hackathon 2026
-
-- **Candidate:** Basant Bansal
-- **Campus:** Indian Institute of Information Technology, Pune (IIIT Pune)
-- **Public Repository:** https://github.com/basantbansal/iiitpune-basant-bansal-hackathon
-- **Architecture:** Hybrid AI/NLP Ingestion + Tactical Index Rebalancing + Wholesale Banking Book Stress Testing
+<!-- _paginate: false -->
+![bg](assets/title-slide.png)
 
 ---
 

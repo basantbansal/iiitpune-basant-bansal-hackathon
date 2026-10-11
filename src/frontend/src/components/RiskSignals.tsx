@@ -62,10 +62,28 @@ export default function RiskSignals({ refreshTrigger }: { refreshTrigger?: numbe
 
   return (
     <div className="space-y-6">
+      {/* Risk Engine Header & Overview Card */}
+      <div className="bg-surface border border-border p-4 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 mb-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">RISK ENGINE</span>
+            <h3 className="text-lg font-bold text-heading">Risk Engine — News to Structured Risk Signals</h3>
+          </div>
+          <p className="text-xs text-gray-300 mt-1.5 leading-relaxed max-w-4xl">
+            The Risk Engine converts financial news into structured signals, including sentiment, event category, impact score, confidence, and supporting evidence. It uses a Groq-hosted language model when available and has a deterministic fallback rule engine with grammar negation and contrastive clause handling when offline or unconfigured.
+          </p>
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+          <span className="text-[11px] font-mono text-gray-400 bg-background px-2.5 py-1 rounded border border-border">
+            Hybrid Cascade • LLM + Lexicon
+          </span>
+        </div>
+      </div>
+
       {/* Header and Provenance Banner */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <h4 className="text-lg font-semibold">Risk Signal Log</h4>
+          <h4 className="text-lg font-semibold">Active Risk Signal Log</h4>
           {signals.length > 0 && (
             <div className="text-xs text-gray-400">
               Total Signals: <span className="text-heading font-medium">{signals.length}</span> (⚡ Groq: <span className="text-purple-400">{groqCount}</span> | ⚙️ Fallback Rules: <span className="text-amber-400">{fallbackCount}</span>)

@@ -57,6 +57,24 @@ export default function StressTest() {
 
   return (
     <div className="space-y-6">
+      {/* Module B Header & Overview Card */}
+      <div className="bg-surface border border-border p-4 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">MODULE B</span>
+            <h3 className="text-lg font-bold text-heading">Module B — Strategic Banking Stress Testing</h3>
+          </div>
+          <p className="text-xs text-gray-300 mt-1.5 leading-relaxed max-w-4xl">
+            Evaluates how predefined financial shocks affect a synthetic banking book containing corporate loans, fixed-income bonds, interest-rate swaps, and equities. Simulates multi-channel macro stress, displaying before-and-after valuations and individual asset-class loss contributions under strict conservation of balance.
+          </p>
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+          <span className="text-[11px] font-mono text-gray-400 bg-background px-2.5 py-1 rounded border border-border">
+            14 Positions • 4 Asset Classes
+          </span>
+        </div>
+      </div>
+
       {/* High-Impact Trigger Banner */}
       {triggerInfo && triggerInfo.has_trigger && (
         <div className="bg-amber-950/40 border border-amber-600/60 p-4 rounded-lg flex items-start gap-3 text-amber-200">

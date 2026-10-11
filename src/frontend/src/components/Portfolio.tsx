@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
+import HumanExpertReview from './HumanExpertReview';
 
 interface PortfolioProps {
   metrics: any;
@@ -95,6 +96,24 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
 
   return (
     <div className="space-y-8">
+      {/* Module A Header & Overview Card */}
+      <div className="bg-surface border border-border p-4 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">MODULE A</span>
+            <h3 className="text-lg font-bold text-heading">Module A — Tactical Portfolio Rebalancing</h3>
+          </div>
+          <p className="text-xs text-gray-300 mt-1.5 leading-relaxed max-w-4xl">
+            Converts news-based risk signals into changes in target stock allocations. Positive sentiment can increase a stock's target weight and negative sentiment can reduce it, subject to portfolio constraints (±5.0 pp tracking-error limits, simplex renormalization, and preserving baseline weights for stocks without news).
+          </p>
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+          <span className="text-[11px] font-mono text-gray-400 bg-background px-2.5 py-1 rounded border border-border">
+            Top 10 S&P Universe • ±5.0 pp Limits
+          </span>
+        </div>
+      </div>
+
       {/* Top Section: Weight Chart and Volatility Cards */}
       <div className="bg-surface border border-border p-5 rounded-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -366,6 +385,9 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
           </table>
         </div>
       </div>
+
+      {/* Human Expert Review Second Opinion Card */}
+      <HumanExpertReview />
     </div>
   );
 }

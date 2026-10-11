@@ -40,3 +40,6 @@ yarn-error.log*
 *.patch
 scratch/
 *.log
+
+# Nested clone directory
+iiitpune-basant-bansal-hackathon/
