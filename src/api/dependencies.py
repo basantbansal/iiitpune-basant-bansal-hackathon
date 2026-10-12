@@ -44,11 +44,35 @@ class AppState:
         elif any(v is not None for v in self.rebalancer.current_shares.values()):
             self.db.save_holdings(self.rebalancer.current_shares)
 
-        # Load persisted historical state for display without replaying trades on startup
+        # Restore latest target weights if available
+        latest_weights = self.db.get_latest_target_weights()
+        if latest_weights:
+            self.rebalancer.current_weights = latest_weights
+
+        # Load persisted historical state for display
         self.signals_log: List[Dict[str, Any]] = self.db.get_all_signals()
-        self.latest_orders: pd.DataFrame = pd.DataFrame()
-        self.last_updated: str = "Never"
         
+        # Restore persisted orders or reconstruct from active signals
+        persisted_orders = self.db.get_latest_orders()
+        if not persisted_orders.empty:
+            self.latest_orders = persisted_orders
+        elif self.signals_log:
+            signals_for_rebalance = [
+                s for s in self.signals_log
+                if not s.get("is_stale", False) and (self.data_mode != "Live Market (Google RSS)" or not s.get("is_synthetic", False))
+            ]
+            if signals_for_rebalance:
+                try:
+                    self.latest_orders = self.rebalancer.rebalance(signals_for_rebalance)
+                    self.db.save_latest_orders(self.latest_orders)
+                except Exception:
+                    self.latest_orders = pd.DataFrame()
+            else:
+                self.latest_orders = pd.DataFrame()
+        else:
+            self.latest_orders = pd.DataFrame()
+
+        self.last_updated: str = "Never"
         if self.signals_log:
             last_sig = self.signals_log[-1]
             self.last_updated = last_sig.get("published_at", "Restored")

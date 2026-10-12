@@ -2,6 +2,7 @@ import hashlib
 import os
 import sqlite3
 from datetime import datetime, timezone
+import pandas as pd
 
 # Resolve project root (two levels up from src/storage)
 PROJECT_ROOT = os.path.abspath(
@@ -111,6 +112,27 @@ class SignalDatabase:
                 "CREATE INDEX IF NOT EXISTS idx_target_weights_scan ON target_weight_history(scan_time, ticker)"
             )
 
+            # Latest rebalance orders table
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS latest_orders (
+                    ticker TEXT PRIMARY KEY,
+                    price REAL,
+                    prev_weight TEXT,
+                    new_weight TEXT,
+                    delta TEXT,
+                    current_shares REAL,
+                    pre_shares REAL,
+                    target_shares REAL,
+                    post_shares REAL,
+                    action TEXT,
+                    order_qty REAL,
+                    signed_qty REAL,
+                    trade_value REAL
+                )
+                """
+            )
+
             conn.commit()
 
     def get_config(self) -> dict:
@@ -203,6 +225,88 @@ class SignalDatabase:
                 for r in rows
             ]
 
+    def get_latest_target_weights(self) -> dict:
+        """Fetches target weights from the most recent scan if available."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT ticker, target_weight FROM target_weight_history
+                WHERE scan_time = (SELECT MAX(scan_time) FROM target_weight_history)
+                """
+            )
+            rows = cursor.fetchall()
+            if rows:
+                return {r[0]: float(r[1]) for r in rows}
+            return {}
+
+    def save_latest_orders(self, orders_df: pd.DataFrame):
+        """Persists the latest rebalance orders table."""
+        if orders_df is None or orders_df.empty:
+            return
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM latest_orders")
+            for _, row in orders_df.iterrows():
+                cursor.execute(
+                    """
+                    INSERT INTO latest_orders 
+                    (ticker, price, prev_weight, new_weight, delta, current_shares, pre_shares, target_shares, post_shares, action, order_qty, signed_qty, trade_value)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(row.get("Ticker", "")),
+                        float(row.get("Price ($)", 0.0) or 0.0) if row.get("Price ($)") is not None and not pd.isna(row.get("Price ($)")) else None,
+                        str(row.get("Prev Weight", "10.00%")),
+                        str(row.get("New Weight", "10.00%")),
+                        str(row.get("Delta", "0.00%")),
+                        float(row.get("Current Shares", 0.0) or 0.0) if row.get("Current Shares") is not None and not pd.isna(row.get("Current Shares")) else None,
+                        float(row.get("Pre Shares", 0.0) or 0.0) if row.get("Pre Shares") is not None and not pd.isna(row.get("Pre Shares")) else None,
+                        float(row.get("Target Shares", 0.0) or 0.0) if row.get("Target Shares") is not None and not pd.isna(row.get("Target Shares")) else None,
+                        float(row.get("Post Shares", 0.0) or 0.0) if row.get("Post Shares") is not None and not pd.isna(row.get("Post Shares")) else None,
+                        str(row.get("Action", "HOLD")),
+                        float(row.get("Order Qty", 0.0) or 0.0) if row.get("Order Qty") is not None and not pd.isna(row.get("Order Qty")) else 0.0,
+                        float(row.get("Signed Qty", 0.0) or 0.0) if row.get("Signed Qty") is not None and not pd.isna(row.get("Signed Qty")) else 0.0,
+                        float(row.get("Trade Value ($)", 0.0) or 0.0) if row.get("Trade Value ($)") is not None and not pd.isna(row.get("Trade Value ($)")) else 0.0,
+                    )
+                )
+            conn.commit()
+
+    def get_latest_orders(self) -> pd.DataFrame:
+        """Fetches the latest persisted rebalance orders DataFrame."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT ticker, price, prev_weight, new_weight, delta, current_shares, pre_shares, target_shares, post_shares, action, order_qty, signed_qty, trade_value
+                FROM latest_orders
+                """
+            )
+            rows = cursor.fetchall()
+            if not rows:
+                return pd.DataFrame()
+            df = pd.DataFrame(
+                [
+                    {
+                        "Ticker": r[0],
+                        "Price ($)": r[1],
+                        "Prev Weight": r[2],
+                        "New Weight": r[3],
+                        "Delta": r[4],
+                        "Current Shares": r[5],
+                        "Pre Shares": r[6],
+                        "Target Shares": r[7],
+                        "Post Shares": r[8],
+                        "Action": r[9],
+                        "Order Qty": r[10],
+                        "Signed Qty": r[11],
+                        "Trade Value ($)": r[12]
+                    }
+                    for r in rows
+                ]
+            )
+            return df
+
     def clear_runtime_data(self):
         """Clears all runtime signals and documents, preserving configuration."""
         with self._get_connection() as conn:
@@ -211,6 +315,7 @@ class SignalDatabase:
             cursor.execute("DELETE FROM documents")
             cursor.execute("DELETE FROM holdings")
             cursor.execute("DELETE FROM target_weight_history")
+            cursor.execute("DELETE FROM latest_orders")
             conn.commit()
 
     def get_recent_documents(self, hours: int = 24) -> list:

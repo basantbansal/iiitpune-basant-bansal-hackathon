@@ -59,6 +59,23 @@ async def update_config(config: RebalanceConfig, state: AppState = Depends(get_s
         state.max_items = config.max_items
         
         state.db.save_config(config.model_dump())
+
+        # If signals exist, recalculate rebalance orders and weights using new alpha_tilt
+        if state.signals_log:
+            is_offline = "Offline" in state.data_mode
+            signals_for_rebalance = [
+                s for s in state.signals_log
+                if not s.get("is_stale", False) and (is_offline or not s.get("is_synthetic", False))
+            ]
+            if signals_for_rebalance:
+                try:
+                    state.latest_orders = state.rebalancer.rebalance(signals_for_rebalance)
+                    state.db.save_holdings(state.rebalancer.current_shares)
+                    scan_iso = datetime.now(timezone.utc).isoformat()
+                    state.db.save_target_weights_history(scan_iso, state.rebalancer.current_weights)
+                    state.db.save_latest_orders(state.latest_orders)
+                except Exception:
+                    pass
     return config
 
 @router.get("/portfolio")
@@ -687,6 +704,21 @@ async def execute_market_scan(state: AppState = Depends(get_state)):
                     state.db.save_holdings(state.rebalancer.current_shares)
                     scan_iso = datetime.now(timezone.utc).isoformat()
                     state.db.save_target_weights_history(scan_iso, state.rebalancer.current_weights)
+                    state.db.save_latest_orders(state.latest_orders)
+                except ValueError as e:
+                    pass
+        elif state.latest_orders.empty and state.signals_log:
+            signals_for_rebalance = [
+                s for s in state.signals_log
+                if not s.get("is_stale", False) and (is_offline or not s.get("is_synthetic", False))
+            ]
+            if signals_for_rebalance:
+                try:
+                    state.latest_orders = state.rebalancer.rebalance(signals_for_rebalance)
+                    state.db.save_holdings(state.rebalancer.current_shares)
+                    scan_iso = datetime.now(timezone.utc).isoformat()
+                    state.db.save_target_weights_history(scan_iso, state.rebalancer.current_weights)
+                    state.db.save_latest_orders(state.latest_orders)
                 except ValueError as e:
                     pass
 

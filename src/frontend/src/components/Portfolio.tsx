@@ -18,19 +18,28 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
   const navigate = useNavigate();
 
   useEffect(() => {
+    let isCancelled = false;
     setIsFetching(true);
     Promise.all([
       api.getPortfolio(),
       api.getPortfolioHistory().catch(() => [])
     ])
       .then(([portData, histData]) => {
-        setPortfolio(portData || []);
-        setHistoryData(histData || []);
+        if (!isCancelled) {
+          setPortfolio(portData || []);
+          setHistoryData(histData || []);
+        }
       })
       .catch(console.error)
       .finally(() => {
-        setIsFetching(false);
+        if (!isCancelled) {
+          setIsFetching(false);
+        }
       });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [metrics, refreshTrigger]);
 
   const chartData = portfolio.map(item => {
@@ -199,7 +208,7 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
           </div>
         ) : (
           <div className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart 
                 data={chartData} 
                 margin={{ top: 10, right: 30, left: 10, bottom: 5 }}
@@ -219,6 +228,7 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
                   fill="#475569" 
                   name="Baseline Weight (10.0%)" 
                   cursor="pointer"
+                  isAnimationActive={false}
                   onClick={(entry: any) => {
                     if (entry && entry.name) navigate(`/stock/${entry.name}`);
                   }}
@@ -227,12 +237,13 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
                   dataKey="Target" 
                   name="Target Weight (%)" 
                   cursor="pointer"
+                  isAnimationActive={false}
                   onClick={(entry: any) => {
                     if (entry && entry.name) navigate(`/stock/${entry.name}`);
                   }}
                 >
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={getTargetColor(entry.delta)} cursor="pointer" />
+                  {chartData.map((entry) => (
+                    <Cell key={`cell-${entry.name}-${entry.delta}-${entry.Target}`} fill={getTargetColor(entry.delta)} cursor="pointer" />
                   ))}
                 </Bar>
               </BarChart>
