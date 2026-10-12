@@ -128,6 +128,7 @@ Open two terminal windows:
 source venv/bin/activate
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+Wait for this "INFO:Application startup complete" message , after this only run the next commands (~60s)
 
 **Terminal 2 — Frontend (Vite):**
 ```bash
