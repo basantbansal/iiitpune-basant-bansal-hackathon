@@ -120,6 +120,7 @@ async def get_portfolio(state: AppState = Depends(get_state)):
         signed_trade_notional = round_currency(signed_qty_round * price) if (price is not None and action != "HOLD") else 0.0
 
         t_signals = [s for s in state.signals_log if s.get("entity", "").upper() == ticker or s.get("ticker", "").upper() == ticker]
+        company_name = state.ingestor.TICKER_COMPANY_MAP.get(ticker, ticker)
         if t_signals:
             sentiments = [float(s.get("sentiment_score", 0.0)) for s in t_signals]
             net_sentiment = round(float(np.mean(sentiments)), 2)
@@ -131,6 +132,7 @@ async def get_portfolio(state: AppState = Depends(get_state)):
 
         portfolio.append({
             "ticker": ticker,
+            "company_name": company_name,
             "price": price,
             "pre_shares": pre_sh_round,
             "current_shares": pre_sh_round,
@@ -148,7 +150,8 @@ async def get_portfolio(state: AppState = Depends(get_state)):
             "baseline_weight": baseline,
             "signed_delta_pct": signed_delta_pct,
             "net_sentiment": net_sentiment,
-            "driving_headline": driving_headline
+            "driving_headline": driving_headline,
+            "signal_count": len(t_signals)
         })
     return portfolio
 
@@ -232,6 +235,7 @@ async def get_stocks(state: AppState = Depends(get_state)):
 
 @router.get("/stocks/{ticker}/details")
 async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
+    ticker = ticker.upper()
     if ticker not in state.rebalancer.tickers:
         raise HTTPException(status_code=404, detail="Stock not found")
         
@@ -239,16 +243,153 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
     price = prices.get(ticker)
     current_w = state.rebalancer.current_weights.get(ticker, 0.0)
     baseline_w = 1.0 / len(state.rebalancer.tickers)
+    company_name = state.ingestor.TICKER_COMPANY_MAP.get(ticker, ticker)
     
+    # Filter signals matching this ticker from runtime signals and persistent DB
+    ticker_upper = ticker.upper()
+    t_signals = [
+        s for s in state.signals_log 
+        if s.get("entity", "").upper() == ticker_upper or s.get("ticker", "").upper() == ticker_upper
+    ]
+    # Sort signals most recent first
+    t_signals_sorted = sorted(
+        t_signals,
+        key=lambda s: str(s.get("published_at", "") or ""),
+        reverse=True
+    )
+    
+    if t_signals:
+        sentiments = [float(s.get("sentiment_score", 0.0)) for s in t_signals]
+        net_sentiment = round(float(np.mean(sentiments)), 2)
+        avg_impact = round(float(np.mean([float(s.get("impact_score", 5.0)) for s in t_signals])), 1)
+        driving_signal = max(t_signals, key=lambda s: float(s.get("impact_score", 0.0)))
+    else:
+        net_sentiment = 0.0
+        avg_impact = 0.0
+        driving_signal = None
+        
+    delta_pp = round((current_w - baseline_w) * 100, 2)
+    
+    # Extract trade execution data for this stock if orders exist
+    action = "HOLD"
+    order_qty = 0.0
+    signed_qty = 0.0
+    trade_value = 0.0
+    pre_shares = state.rebalancer.current_shares.get(ticker)
+    post_shares = pre_shares
+    
+    if not state.latest_orders.empty and "Ticker" in state.latest_orders.columns:
+        matching_order = state.latest_orders[state.latest_orders["Ticker"] == ticker]
+        if not matching_order.empty:
+            row = matching_order.iloc[0]
+            action = str(row.get("Action", "HOLD"))
+            order_qty = float(row.get("Order Qty", 0.0) or 0.0)
+            signed_qty = float(row.get("Signed Qty", 0.0) or 0.0)
+            trade_value = float(row.get("Trade Value ($)", 0.0) or 0.0)
+            pre_shares = float(row.get("Current Shares", 0.0) or (pre_shares or 0.0))
+            post_shares = float(row.get("Target Shares", 0.0) or (pre_shares or 0.0))
+            
+    formatted_signals = []
+    for sig in t_signals_sorted:
+        s = sig.copy()
+        event_type = s.get("event_classification", "")
+        is_unclass = event_type in ("Unclassified / Needs Review", "Unclassified")
+        
+        if is_unclass:
+            sev = None
+        elif "severity" not in s or s["severity"] == event_type or s["severity"] == "N/A":
+            sev_val = state.risk_engine.base_severities.get(event_type)
+            sev = float(sev_val) if isinstance(sev_val, (int, float)) else None
+        elif s.get("severity") == "N/A":
+            sev = None
+        else:
+            try:
+                sev = float(s["severity"])
+            except Exception:
+                sev = None
+
+        evidence_text = s.get("evidence", s.get("evidence_span", ""))
+        inf_source = s.get("inference_source") or ("groq" if "groq" in str(s.get("model_version", "")).lower() else "fallback_rules")
+        is_synthetic = bool(s.get("is_synthetic", False) or "synthetic" in str(s.get("source", "")).lower() or "demo data" in str(s.get("source", "")).lower())
+        is_shared = bool(s.get("is_shared_headline", False))
+
+        pub_str = str(s.get("published_at", ""))
+        try:
+            pub_dt = pd.to_datetime(pub_str, utc=True)
+            age_days = round((pd.Timestamp.now(tz="UTC") - pub_dt).total_seconds() / 86400.0, 1)
+        except Exception:
+            age_days = None
+
+        score = float(s.get("sentiment_score", 0.0))
+        conf = float(s.get("confidence", 0.50))
+        if conf < 0.35 or (abs(score) <= 0.15 and is_unclass):
+            direction_badge = "Needs Review"
+        elif score > 0.15:
+            direction_badge = "Bullish"
+        elif score < -0.15:
+            direction_badge = "Bearish"
+        else:
+            direction_badge = "Neutral"
+
+        net_delta_str = f"{delta_pp:+.2f} pp"
+
+        formatted_signals.append({
+            "ticker": ticker,
+            "headline": s.get("headline", ""),
+            "source": s.get("source", "Market Feed"),
+            "published_at": pub_str,
+            "article_age_days": age_days,
+            "sentiment_score": round(score, 2),
+            "sentiment_label": direction_badge,
+            "direction_badge": direction_badge,
+            "impact_score": round(float(s.get("impact_score", 5.0)), 1),
+            "severity": sev,
+            "event_classification": s.get("event_classification", "Market News"),
+            "confidence": round(conf, 2),
+            "evidence": evidence_text,
+            "evidence_span": evidence_text,
+            "model_version": s.get("model_version", "Groq LLaMA 3.3 70B"),
+            "inference_source": inf_source,
+            "is_unclassified": is_unclass,
+            "is_synthetic": is_synthetic,
+            "is_shared_headline": is_shared,
+            "net_delta": net_delta_str,
+            "url": s.get("url", "")
+        })
+        
+    # Build human-readable rationale explanation
+    if delta_pp > 0.05:
+        rationale_text = f"Overweight tilt (+{delta_pp:.2f} pp): Positive event sentiment (net score {net_sentiment:+.2f}) drove allocation to {current_w*100:.2f}%, triggering a BUY order for {order_qty:.2f} shares."
+    elif delta_pp < -0.05:
+        rationale_text = f"Underweight tilt ({delta_pp:.2f} pp): Adverse sentiment or risk signals (net score {net_sentiment:+.2f}) reduced allocation to {current_w*100:.2f}%, triggering a SELL order for {order_qty:.2f} shares."
+    elif len(formatted_signals) > 0:
+        rationale_text = f"Neutral balanced tilt: {len(formatted_signals)} signal(s) analyzed resulted in balanced sentiment ({net_sentiment:+.2f}), maintaining allocation near baseline."
+    else:
+        rationale_text = "Baseline preservation: No active news signals in recent scans. As per institutional index rebalancing rules, unaffected constituents retain equal-weight baseline (10.00%) with 0 order quantity (HOLD)."
+
     return {
         "ticker": ticker,
+        "company_name": company_name,
         "price": price,
         "current_weight": current_w,
-        "baseline_weight": baseline_w
+        "baseline_weight": baseline_w,
+        "delta_pp": delta_pp,
+        "net_sentiment": net_sentiment,
+        "avg_impact": avg_impact,
+        "action": action,
+        "order_qty": order_qty,
+        "signed_qty": signed_qty,
+        "trade_value": trade_value,
+        "pre_shares": pre_shares,
+        "post_shares": post_shares,
+        "rationale_text": rationale_text,
+        "signal_count": len(formatted_signals),
+        "signals": formatted_signals
     }
 
 @router.get("/stocks/{ticker}/history", response_model=List[HistoryDataPoint])
 async def get_stock_history(ticker: str, period: str = Query("1Y")):
+    ticker = ticker.upper()
     valid_periods = {"1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
     yf_p = valid_periods.get(period, "1y")
     

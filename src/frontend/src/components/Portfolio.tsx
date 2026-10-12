@@ -52,6 +52,24 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
     return '#64748b'; // Neutral / Unchanged: Slate Gray
   };
 
+  const renderCustomXAxisTick = ({ x, y, payload }: any) => {
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text
+          x={0}
+          y={0}
+          dy={14}
+          textAnchor="middle"
+          fill="#8B949E"
+          className="cursor-pointer hover:fill-primary font-bold text-xs transition-colors"
+          onClick={() => navigate(`/stock/${payload.value}`)}
+        >
+          {payload.value}
+        </text>
+      </g>
+    );
+  };
+
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -81,6 +99,9 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
             <span className={`font-mono font-bold ${deltaColor}`}>
               {deltaSign}{delta.toFixed(2)} pp
             </span>
+          </div>
+          <div className="pt-1.5 border-t border-[#30363D]/60 text-[10px] text-primary flex items-center justify-center gap-1 font-medium">
+            👉 Click bar to view full {data.name} details & news
           </div>
         </div>
       );
@@ -118,8 +139,13 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
       <div className="bg-surface border border-border p-5 rounded-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h4 className="text-lg font-semibold">Target vs. Baseline Weight Distribution</h4>
-            <p className="text-xs text-gray-400 mt-0.5">Authoritative tactical index allocation vs 10% equal-weight benchmark</p>
+            <h4 className="text-lg font-semibold flex items-center gap-2">
+              <span>Target vs. Baseline Weight Distribution</span>
+              <span className="text-[11px] font-normal text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                Click any bar to open company
+              </span>
+            </h4>
+            <p className="text-xs text-gray-400 mt-0.5">Authoritative tactical index allocation vs 10% equal-weight benchmark &bull; Click any bar or constituent ticker below to open single-stock news & technicals</p>
           </div>
           
           {/* Visual distinction legend */}
@@ -173,14 +199,39 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
         ) : (
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
-                <XAxis dataKey="name" stroke="#8B949E" />
+              <BarChart 
+                data={chartData} 
+                margin={{ top: 10, right: 30, left: 10, bottom: 5 }}
+                className="cursor-pointer"
+                onClick={(state: any) => {
+                  if (state && state.activePayload && state.activePayload.length) {
+                    const ticker = state.activePayload[0].payload.name;
+                    if (ticker) navigate(`/stock/${ticker}`);
+                  }
+                }}
+              >
+                <XAxis dataKey="name" stroke="#8B949E" tick={renderCustomXAxisTick} />
                 <YAxis stroke="#8B949E" unit="%" domain={[0, 20]} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="Baseline" fill="#475569" name="Baseline Weight (10.0%)" />
-                <Bar dataKey="Target" name="Target Weight (%)">
+                <Bar 
+                  dataKey="Baseline" 
+                  fill="#475569" 
+                  name="Baseline Weight (10.0%)" 
+                  cursor="pointer"
+                  onClick={(entry: any) => {
+                    if (entry && entry.name) navigate(`/stock/${entry.name}`);
+                  }}
+                />
+                <Bar 
+                  dataKey="Target" 
+                  name="Target Weight (%)" 
+                  cursor="pointer"
+                  onClick={(entry: any) => {
+                    if (entry && entry.name) navigate(`/stock/${entry.name}`);
+                  }}
+                >
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={getTargetColor(entry.delta)} />
+                    <Cell key={`cell-${index}`} fill={getTargetColor(entry.delta)} cursor="pointer" />
                   ))}
                 </Bar>
               </BarChart>
@@ -308,10 +359,13 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
                     <td className="px-3 py-3 font-semibold">
                       <button 
                         onClick={() => navigate(`/stock/${row.ticker}`)}
-                        className="text-primary hover:underline font-bold"
-                        title="Click to view single-stock analysis"
+                        className="text-primary hover:underline font-bold text-left flex flex-col"
+                        title="Click to view detailed stock news, sentiment breakdown, and technical charts"
                       >
-                        {row.ticker}
+                        <span>{row.ticker}</span>
+                        {row.company_name && row.company_name !== row.ticker && (
+                          <span className="text-[11px] text-gray-400 font-normal">{row.company_name}</span>
+                        )}
                       </button>
                     </td>
                     <td className="px-3 py-3 text-right font-mono">
@@ -362,8 +416,12 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
                     <td className="px-3 py-3 text-right font-mono text-gray-400">
                       {formatCurrency(row.est_fee)}
                     </td>
-                    <td className="px-3 py-3 max-w-[280px]">
-                      <div className="flex items-center gap-2">
+                    <td className="px-3 py-3 max-w-[320px]">
+                      <div 
+                        onClick={() => navigate(`/stock/${row.ticker}`)}
+                        className="flex items-center gap-2 cursor-pointer group"
+                        title={`${row.driving_headline}\n\n👉 Click to view all ${row.signal_count || 1} news articles and AI evidence for ${row.ticker}`}
+                      >
                         <span className={`text-xs px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
                           row.net_sentiment > 0.05 
                             ? 'bg-success/20 text-success border border-success/30' 
@@ -373,7 +431,12 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
                         }`} title="Average entity sentiment score">
                           {row.net_sentiment > 0 ? `+${row.net_sentiment.toFixed(2)}` : row.net_sentiment?.toFixed(2) ?? '0.00'}
                         </span>
-                        <span className="text-xs text-gray-300 truncate" title={row.driving_headline}>
+                        {row.signal_count > 1 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 font-mono font-semibold shrink-0">
+                            {row.signal_count} news
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-300 truncate group-hover:text-primary group-hover:underline transition-colors">
                           {row.driving_headline || '—'}
                         </span>
                       </div>
