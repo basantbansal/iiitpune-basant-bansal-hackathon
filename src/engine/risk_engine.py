@@ -208,7 +208,10 @@ def discover_groq_model(client, env_override: str = None) -> str:
         "llama-3.1-70b-versatile",
         "llama3-70b-8192",
         "llama3-8b-8192",
-        "mixtral-8x7b-32768"
+        "mixtral-8x7b-32768",
+        "qwen/qwen3.8-27b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
     ]
     try:
         if hasattr(client, "models") and hasattr(client.models, "list"):
@@ -223,8 +226,10 @@ def discover_groq_model(client, env_override: str = None) -> str:
                 if p in avail_ids:
                     _GROQ_MODEL_CACHE["model"] = p
                     return p
+            # Fallback to any general text-generation model
             for mid in avail_ids:
-                if ("llama" in mid.lower() or "mixtral" in mid.lower()) and "guard" not in mid.lower():
+                m_low = mid.lower()
+                if not any(x in m_low for x in ["whisper", "guard", "audio", "embed"]):
                     _GROQ_MODEL_CACHE["model"] = mid
                     return mid
     except Exception as e:

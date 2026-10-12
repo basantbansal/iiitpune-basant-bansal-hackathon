@@ -342,6 +342,8 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
             hd = s.get("headline", "")
             url = f"https://news.google.com/search?q={urllib.parse.quote(hd)}" if hd else ""
 
+        net_delta_str = s.get("net_delta") or f"{delta_pp:+.2f} pp"
+
         formatted_signals.append({
             "ticker": ticker,
             "headline": s.get("headline", ""),
