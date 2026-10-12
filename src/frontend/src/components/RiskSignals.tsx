@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
+import { ExternalLink } from 'lucide-react';
 
 function formatArticleAge(days: number | undefined, pubStr?: string): string {
   if (days != null && !isNaN(days)) {
@@ -237,7 +238,16 @@ export default function RiskSignals({ refreshTrigger }: { refreshTrigger?: numbe
                                 </span>
                               )}
 
-                              <h5 className="font-bold text-heading text-base inline">{sig.headline}</h5>
+                              <a 
+                                href={sig.url || `https://news.google.com/search?q=${encodeURIComponent(sig.headline || '')}`}
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="font-bold text-heading text-base inline leading-snug hover:text-primary hover:underline transition-colors group/link cursor-pointer"
+                                title={`Click to read real news article: "${sig.headline}"`}
+                              >
+                                <span>{sig.headline}</span>
+                                <ExternalLink size={15} className="inline-block ml-1.5 text-primary opacity-70 group-hover/link:opacity-100 group-hover/link:translate-x-0.5 transition-all align-middle" />
+                              </a>
                             </div>
 
                             <div className="text-xs text-gray-400 mt-1 flex items-center gap-2 flex-wrap">

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useNavigate } from 'react-router-dom';
+import { ExternalLink } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
 import HumanExpertReview from './HumanExpertReview';
 
@@ -417,28 +418,45 @@ export default function Portfolio({ metrics, refreshTrigger, isLoading }: Portfo
                       {formatCurrency(row.est_fee)}
                     </td>
                     <td className="px-3 py-3 max-w-[320px]">
-                      <div 
-                        onClick={() => navigate(`/stock/${row.ticker}`)}
-                        className="flex items-center gap-2 cursor-pointer group"
-                        title={`${row.driving_headline}\n\n👉 Click to view all ${row.signal_count || 1} news articles and AI evidence for ${row.ticker}`}
-                      >
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
-                          row.net_sentiment > 0.05 
-                            ? 'bg-success/20 text-success border border-success/30' 
-                            : row.net_sentiment < -0.05 
-                            ? 'bg-danger/20 text-danger border border-danger/30' 
-                            : 'bg-gray-800 text-gray-400 border border-gray-700'
-                        }`} title="Average entity sentiment score">
+                      <div className="flex items-center gap-2">
+                        <span 
+                          onClick={() => navigate(`/stock/${row.ticker}`)}
+                          className={`text-xs px-1.5 py-0.5 rounded font-mono font-bold shrink-0 cursor-pointer ${
+                            row.net_sentiment > 0.05 
+                              ? 'bg-success/20 text-success border border-success/30' 
+                              : row.net_sentiment < -0.05 
+                              ? 'bg-danger/20 text-danger border border-danger/30' 
+                              : 'bg-gray-800 text-gray-400 border border-gray-700'
+                          }`} 
+                          title="Average entity sentiment score • Click to view constituent details"
+                        >
                           {row.net_sentiment > 0 ? `+${row.net_sentiment.toFixed(2)}` : row.net_sentiment?.toFixed(2) ?? '0.00'}
                         </span>
                         {row.signal_count > 1 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 font-mono font-semibold shrink-0">
+                          <button 
+                            onClick={() => navigate(`/stock/${row.ticker}`)}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 font-mono font-semibold shrink-0 hover:bg-primary/30 cursor-pointer"
+                            title={`Click to view all ${row.signal_count} news signals for ${row.ticker}`}
+                          >
                             {row.signal_count} news
+                          </button>
+                        )}
+                        {row.driving_headline && row.driving_headline !== '—' && row.driving_headline !== 'No active news signals' ? (
+                          <a 
+                            href={row.driving_headline_url || `https://news.google.com/search?q=${encodeURIComponent(row.driving_headline)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-gray-300 truncate hover:text-primary hover:underline transition-colors flex items-center gap-1 group/link cursor-pointer min-w-0"
+                            title={`Original news: "${row.driving_headline}"\n👉 Click to read real news article in new tab`}
+                          >
+                            <span className="truncate">{row.driving_headline}</span>
+                            <ExternalLink size={12} className="opacity-60 group-hover/link:opacity-100 shrink-0 text-primary" />
+                          </a>
+                        ) : (
+                          <span className="text-xs text-gray-400 truncate">
+                            {row.driving_headline || '—'}
                           </span>
                         )}
-                        <span className="text-xs text-gray-300 truncate group-hover:text-primary group-hover:underline transition-colors">
-                          {row.driving_headline || '—'}
-                        </span>
                       </div>
                     </td>
                   </tr>

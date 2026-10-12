@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 import json
 import time
+import urllib.parse
 import yfinance as yf
 
 from src.api.dependencies import get_state, AppState
@@ -126,9 +127,13 @@ async def get_portfolio(state: AppState = Depends(get_state)):
             net_sentiment = round(float(np.mean(sentiments)), 2)
             driving_signal = max(t_signals, key=lambda s: float(s.get("impact_score", 0.0)))
             driving_headline = driving_signal.get("headline", "—")
+            driving_url = driving_signal.get("url")
+            if not driving_url and driving_headline and driving_headline != "—":
+                driving_url = f"https://news.google.com/search?q={urllib.parse.quote(driving_headline)}"
         else:
             net_sentiment = 0.0
             driving_headline = "No active news signals"
+            driving_url = ""
 
         portfolio.append({
             "ticker": ticker,
@@ -151,6 +156,7 @@ async def get_portfolio(state: AppState = Depends(get_state)):
             "signed_delta_pct": signed_delta_pct,
             "net_sentiment": net_sentiment,
             "driving_headline": driving_headline,
+            "driving_headline_url": driving_url,
             "signal_count": len(t_signals)
         })
     return portfolio
@@ -331,7 +337,10 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
         else:
             direction_badge = "Neutral"
 
-        net_delta_str = f"{delta_pp:+.2f} pp"
+        url = s.get("url")
+        if not url:
+            hd = s.get("headline", "")
+            url = f"https://news.google.com/search?q={urllib.parse.quote(hd)}" if hd else ""
 
         formatted_signals.append({
             "ticker": ticker,
@@ -354,7 +363,7 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
             "is_synthetic": is_synthetic,
             "is_shared_headline": is_shared,
             "net_delta": net_delta_str,
-            "url": s.get("url", "")
+            "url": url
         })
         
     # Build human-readable rationale explanation
@@ -501,6 +510,13 @@ async def get_risk_signals(state: AppState = Depends(get_state)):
             s["net_delta"] = f"{delta_val:+.2f} pp"
         else:
             s["net_delta"] = "0.00 pp"
+
+        url = s.get("url")
+        if not url:
+            hd = s.get("headline", "")
+            s["url"] = f"https://news.google.com/search?q={urllib.parse.quote(hd)}" if hd else ""
+        else:
+            s["url"] = url
 
         out.append(s)
     return out
