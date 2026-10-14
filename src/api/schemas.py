@@ -61,6 +61,9 @@ class RebalanceConfig(BaseModel):
     data_mode: str
     max_items: int
 
+class HoldingsUpdateRequest(BaseModel):
+    holdings: Dict[str, float]
+
 class StressTestResult(BaseModel):
     scenario: str
     portfolio_impact: float

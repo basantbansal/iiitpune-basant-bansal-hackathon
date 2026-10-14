@@ -13,13 +13,13 @@ import urllib.parse
 import yfinance as yf
 
 from src.api.dependencies import get_state, AppState
-from src.api.schemas import PortfolioMetrics, ScanResponse, RebalanceConfig, HistoryDataPoint
+from src.api.schemas import PortfolioMetrics, ScanResponse, RebalanceConfig, HistoryDataPoint, HoldingsUpdateRequest
 from src.api.utils import fetch_portfolio_covariance, calculate_portfolio_volatility
 from src.engine.processor import EntityResolver, SemanticDedup
 
 def round_currency(val: Optional[float]) -> Optional[float]:
     """Explicit currency-rounding policy: standard financial half-up rounding to nearest cent (2 decimal places).
-    
+
     Half-cent amounts ($0.005) round up to the next cent ($0.01).
     Example: $88,445.00 * 0.0010 = $88.445 -> $88.45.
     """
@@ -57,7 +57,7 @@ async def update_config(config: RebalanceConfig, state: AppState = Depends(get_s
         state.rebalancer.alpha_tilt = config.alpha_tilt
         state.data_mode = config.data_mode
         state.max_items = config.max_items
-        
+
         state.db.save_config(config.model_dump())
 
         # If signals exist, recalculate rebalance orders and weights using new alpha_tilt
@@ -82,7 +82,7 @@ async def update_config(config: RebalanceConfig, state: AppState = Depends(get_s
 async def get_portfolio(state: AppState = Depends(get_state)):
     prices = state.rebalancer.fetch_current_prices()
     baseline = 1.0 / len(state.rebalancer.tickers)
-    
+
     orders_map = {}
     if not state.latest_orders.empty and "Ticker" in state.latest_orders.columns:
         for _, row in state.latest_orders.iterrows():
@@ -112,8 +112,8 @@ async def get_portfolio(state: AppState = Depends(get_state)):
                 target_w = float(str(order_row["New Weight"]).replace("%", "")) / 100.0
             except Exception:
                 target_w = state.rebalancer.current_weights.get(ticker, baseline)
-            # Invariant: Allocation delta (percentage points) = target weight - baseline weight
-            signed_delta_pct = round((target_w - baseline) * 100, 2)
+            # Invariant: Allocation delta (percentage points) = target weight - pre-trade weight
+            signed_delta_pct = round((target_w - pre_w) * 100, 2)
         else:
             pre_sh = curr_sh
             target_sh = curr_sh
@@ -122,9 +122,9 @@ async def get_portfolio(state: AppState = Depends(get_state)):
             signed_qty = 0.0
             trade_val = 0.0
             est_fee = 0.0
-            pre_w = baseline
-            target_w = state.rebalancer.current_weights.get(ticker, baseline)
-            signed_delta_pct = round((target_w - baseline) * 100, 2)
+            pre_w = state.rebalancer.current_weights.get(ticker, baseline)
+            target_w = pre_w
+            signed_delta_pct = 0.0
 
         # Enforce exact invariant: target_shares = pre_shares + signed_qty
         pre_sh_round = round(pre_sh, 2) if pre_sh is not None else None
@@ -152,10 +152,15 @@ async def get_portfolio(state: AppState = Depends(get_state)):
             driving_headline = "No active news signals"
             driving_url = ""
 
+        is_fallback_price = price is None or price <= 0
+        price_source = "Live Market (Yahoo Finance)" if not is_fallback_price else "Deterministic Reference ($100.00)"
+
         portfolio.append({
             "ticker": ticker,
             "company_name": company_name,
             "price": price,
+            "is_fallback_price": is_fallback_price,
+            "price_source": price_source,
             "pre_shares": pre_sh_round,
             "current_shares": pre_sh_round,
             "target_shares": target_sh_round,
@@ -201,14 +206,19 @@ async def get_portfolio_metrics(state: AppState = Depends(get_state)):
             holdings_market_val += sh * p
         else:
             has_missing = True
-            
+
     if has_missing:
         total_val = None
         holdings_market_val = None
         one_way_turnover_pct = 0.0
+        cash_bal = float(state.initial_capital)
     else:
         holdings_market_val = round_currency(holdings_market_val)
-        total_val = round_currency(holdings_market_val - est_txn_cost)
+        est_txn_cost = round_currency(gross_turnover * cost_rate) or 0.0
+        # Available cash = unallocated cash reserves minus cumulative trading fees
+        raw_cash = getattr(state, "cash_balance", 0.0) or 0.0
+        cash_bal = max(0.0, round_currency(raw_cash - est_txn_cost) or 0.0)
+        total_val = round_currency(holdings_market_val + cash_bal)
         one_way_turnover_pct = round((one_way_turnover / total_val) * 100, 2) if total_val else 0.0
 
     cw_series = pd.Series(state.rebalancer.current_weights)
@@ -224,7 +234,7 @@ async def get_portfolio_metrics(state: AppState = Depends(get_state)):
         else:
             max_asset = str(cw_series.idxmax())
             max_asset_weight = max_val
-    
+
     cov_matrix = fetch_portfolio_covariance(state.rebalancer.tickers)
     baseline_vol = None
     target_vol = None
@@ -232,7 +242,7 @@ async def get_portfolio_metrics(state: AppState = Depends(get_state)):
         baseline_weights = {t: 1.0/len(state.rebalancer.tickers) for t in state.rebalancer.tickers}
         baseline_vol = calculate_portfolio_volatility(baseline_weights, cov_matrix, state.rebalancer.tickers)
         target_vol = calculate_portfolio_volatility(state.rebalancer.current_weights, cov_matrix, state.rebalancer.tickers)
-        
+
     return PortfolioMetrics(
         initial_capital=float(state.initial_capital),
         total_value=total_val,
@@ -245,12 +255,101 @@ async def get_portfolio_metrics(state: AppState = Depends(get_state)):
         one_way_turnover_pct=one_way_turnover_pct,
         est_txn_cost=est_txn_cost,
         cumulative_fees_paid=est_txn_cost,
-        cash_balance=-est_txn_cost,
+        cash_balance=cash_bal,
         last_updated=state.last_updated,
         last_scan_duration=getattr(state, "last_scan_duration", None),
         baseline_volatility=baseline_vol,
         target_volatility=target_vol
     )
+
+@router.post("/portfolio/holdings")
+async def update_portfolio_holdings(req: HoldingsUpdateRequest, state: AppState = Depends(get_state)):
+    async with state.lock:
+        # Validate constituent tickers
+        for t in req.holdings:
+            if t not in state.rebalancer.tickers:
+                raise HTTPException(status_code=400, detail=f"Unknown constituent ticker: {t}")
+
+        # Validate non-negative quantities and whole numbers
+        for t, qty in req.holdings.items():
+            if qty < 0:
+                raise HTTPException(status_code=400, detail=f"Share quantity for {t} cannot be negative ({qty})")
+            if not float(qty).is_integer():
+                raise HTTPException(status_code=400, detail=f"Share quantity for {t} must be a whole number ({qty})")
+
+        prices = state.rebalancer.fetch_current_prices()
+        total_market_val = 0.0
+        for t in state.rebalancer.tickers:
+            qty = float(req.holdings.get(t, 0.0))
+            p = prices.get(t)
+            if p is None or p <= 0:
+                p = 100.0  # Deterministic reference baseline price
+            total_market_val += qty * p
+
+        total_market_val = round_currency(total_market_val) or 0.0
+
+        if total_market_val > float(state.initial_capital) + 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Total invested market value (${total_market_val:,.2f}) exceeds available initial capital (${state.initial_capital:,.2f})."
+            )
+
+        new_shares = {t: float(req.holdings.get(t, 0.0)) for t in state.rebalancer.tickers}
+        state.rebalancer.current_shares = new_shares
+        state.db.save_holdings(new_shares)
+
+        if total_market_val > 0:
+            state.rebalancer.current_weights = {
+                t: (new_shares[t] * (prices.get(t) or 100.0)) / total_market_val
+                for t in state.rebalancer.tickers
+            }
+        else:
+            state.rebalancer.current_weights = {
+                t: 1.0 / len(state.rebalancer.tickers) for t in state.rebalancer.tickers
+            }
+
+        # Clear simulated orders: editing holdings configures initial baseline, not an executed trade
+        state.latest_orders = pd.DataFrame()
+        state.db.save_latest_orders(state.latest_orders)
+
+        remaining_cash = round_currency(float(state.initial_capital) - total_market_val) or 0.0
+        state.cash_balance = remaining_cash
+        state.db.save_cash(remaining_cash)
+
+        return {
+            "status": "ok",
+            "message": "Holdings successfully updated.",
+            "holdings": state.rebalancer.current_shares,
+            "total_invested": total_market_val,
+            "remaining_cash": remaining_cash,
+            "initial_capital": float(state.initial_capital)
+        }
+
+@router.post("/portfolio/reset-holdings")
+async def reset_portfolio_holdings(state: AppState = Depends(get_state)):
+    async with state.lock:
+        state.rebalancer._initialize_shares()
+        state.db.save_holdings(state.rebalancer.current_shares)
+        prices = state.rebalancer.fetch_current_prices()
+        total_market_val = sum(
+            float(state.rebalancer.current_shares.get(t, 10.0)) * (prices.get(t) or 100.0)
+            for t in state.rebalancer.tickers
+        )
+        total_market_val = round_currency(total_market_val) or 0.0
+        remaining_cash = max(0.0, round_currency(float(state.initial_capital) - total_market_val) or 0.0)
+        state.cash_balance = remaining_cash
+        state.db.save_cash(remaining_cash)
+        state.rebalancer.current_weights = {t: 1.0 / len(state.rebalancer.tickers) for t in state.rebalancer.tickers}
+        state.latest_orders = pd.DataFrame()
+        state.db.save_latest_orders(state.latest_orders)
+        return {
+            "status": "ok",
+            "message": "Holdings reset to default 10 shares per constituent.",
+            "holdings": state.rebalancer.current_shares,
+            "total_invested": total_market_val,
+            "remaining_cash": remaining_cash,
+            "initial_capital": float(state.initial_capital)
+        }
 
 @router.get("/stocks")
 async def get_stocks(state: AppState = Depends(get_state)):
@@ -261,17 +360,17 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
     ticker = ticker.upper()
     if ticker not in state.rebalancer.tickers:
         raise HTTPException(status_code=404, detail="Stock not found")
-        
+
     prices = state.rebalancer.fetch_current_prices()
     price = prices.get(ticker)
     current_w = state.rebalancer.current_weights.get(ticker, 0.0)
     baseline_w = 1.0 / len(state.rebalancer.tickers)
     company_name = state.ingestor.TICKER_COMPANY_MAP.get(ticker, ticker)
-    
+
     # Filter signals matching this ticker from runtime signals and persistent DB
     ticker_upper = ticker.upper()
     t_signals = [
-        s for s in state.signals_log 
+        s for s in state.signals_log
         if s.get("entity", "").upper() == ticker_upper or s.get("ticker", "").upper() == ticker_upper
     ]
     # Sort signals most recent first
@@ -280,7 +379,7 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
         key=lambda s: str(s.get("published_at", "") or ""),
         reverse=True
     )
-    
+
     if t_signals:
         sentiments = [float(s.get("sentiment_score", 0.0)) for s in t_signals]
         net_sentiment = round(float(np.mean(sentiments)), 2)
@@ -290,9 +389,9 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
         net_sentiment = 0.0
         avg_impact = 0.0
         driving_signal = None
-        
+
     delta_pp = round((current_w - baseline_w) * 100, 2)
-    
+
     # Extract trade execution data for this stock if orders exist
     action = "HOLD"
     order_qty = 0.0
@@ -300,7 +399,7 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
     trade_value = 0.0
     pre_shares = state.rebalancer.current_shares.get(ticker)
     post_shares = pre_shares
-    
+
     if not state.latest_orders.empty and "Ticker" in state.latest_orders.columns:
         matching_order = state.latest_orders[state.latest_orders["Ticker"] == ticker]
         if not matching_order.empty:
@@ -311,13 +410,13 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
             trade_value = float(row.get("Trade Value ($)", 0.0) or 0.0)
             pre_shares = float(row.get("Current Shares", 0.0) or (pre_shares or 0.0))
             post_shares = float(row.get("Target Shares", 0.0) or (pre_shares or 0.0))
-            
+
     formatted_signals = []
     for sig in t_signals_sorted:
         s = sig.copy()
         event_type = s.get("event_classification", "")
         is_unclass = event_type in ("Unclassified / Needs Review", "Unclassified")
-        
+
         if is_unclass:
             sev = None
         elif "severity" not in s or s["severity"] == event_type or s["severity"] == "N/A":
@@ -384,7 +483,7 @@ async def get_stock_details(ticker: str, state: AppState = Depends(get_state)):
             "net_delta": net_delta_str,
             "url": url
         })
-        
+
     # Build human-readable rationale explanation
     if delta_pp > 0.05:
         rationale_text = f"Overweight tilt (+{delta_pp:.2f} pp): Positive event sentiment (net score {net_sentiment:+.2f}) drove allocation to {current_w*100:.2f}%, triggering a BUY order for {order_qty:.2f} shares."
@@ -420,19 +519,19 @@ async def get_stock_history(ticker: str, period: str = Query("1Y")):
     ticker = ticker.upper()
     valid_periods = {"1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
     yf_p = valid_periods.get(period, "1y")
-    
+
     try:
         t = yf.Ticker(ticker)
         hist = t.history(period=yf_p)
         if hist.empty:
             return []
-            
+
         benchmark_hist = yf.Ticker("SPY").history(period=yf_p)
-        
+
         has_enough_data = len(hist) > 50
         sma20 = hist['Close'].rolling(window=20).mean() if has_enough_data else None
         sma50 = hist['Close'].rolling(window=50).mean() if has_enough_data else None
-        
+
         result = []
         for date, row in hist.iterrows():
             d_str = date.strftime("%Y-%m-%d")
@@ -686,7 +785,12 @@ async def execute_market_scan(state: AppState = Depends(get_state)):
 
         if new_signals:
             state.signals_log.extend(new_signals)
-            high_impact = [s for s in new_signals if float(s.get("impact_score", 0) or 0) >= 7.0]
+            high_impact = [
+                s for s in new_signals
+                if float(s.get("impact_score", 0) or 0) >= 7.0
+                and "unclassified" not in str(s.get("event_classification", "")).lower()
+                and str(s.get("event_classification", "")).strip() not in ("", "Needs Review")
+            ]
             if high_impact:
                 state.auto_trigger_stress = high_impact[0]
             else:
@@ -773,13 +877,13 @@ async def execute_market_scan(state: AppState = Depends(get_state)):
 async def get_portfolio_history(state: AppState = Depends(get_state)):
     raw = state.db.get_target_weights_history()
     baseline = 1.0 / len(state.rebalancer.tickers)
-    
+
     if not raw:
         pt = {"scan_time": "Baseline", "scan_label": "Baseline (10%)"}
         for t in state.rebalancer.tickers:
             pt[t] = round(state.rebalancer.current_weights.get(t, baseline) * 100, 2)
         return [pt]
-    
+
     from collections import defaultdict
     grouped = defaultdict(dict)
     scan_order = []
@@ -788,13 +892,13 @@ async def get_portfolio_history(state: AppState = Depends(get_state)):
         if st not in grouped:
             scan_order.append(st)
         grouped[st][r["ticker"]] = round(float(r["target_weight"]) * 100, 2)
-    
+
     result = []
     first_pt = {"scan_time": "Baseline", "scan_label": "Baseline"}
     for t in state.rebalancer.tickers:
         first_pt[t] = 10.0
     result.append(first_pt)
-    
+
     for idx, st in enumerate(scan_order):
         try:
             dt = datetime.fromisoformat(st)
@@ -813,7 +917,12 @@ async def get_stress_scenarios(state: AppState = Depends(get_state)):
 
 @router.get("/stress-trigger")
 async def get_stress_trigger(state: AppState = Depends(get_state)):
-    high_impact_signals = [s for s in state.signals_log if float(s.get("impact_score", 0) or 0) >= 7.0]
+    high_impact_signals = [
+        s for s in state.signals_log
+        if float(s.get("impact_score", 0) or 0) >= 7.0
+        and "unclassified" not in str(s.get("event_classification", "")).lower()
+        and str(s.get("event_classification", "")).strip() not in ("", "Needs Review")
+    ]
     if not high_impact_signals:
         return {
             "has_trigger": False,
@@ -821,17 +930,17 @@ async def get_stress_trigger(state: AppState = Depends(get_state)):
             "message": "No high-impact trigger in the last scan (impact ≥ 7); manual scenario selection active.",
             "signal": None
         }
-    
+
     top_sig = max(high_impact_signals, key=lambda s: float(s.get("impact_score", 0) or 0))
     event_class = str(top_sig.get("event_classification", ""))
-    
+
     if event_class == "Macroeconomic":
         rec_scenario = "1. 2022 Fed Tightening Shock"
     elif event_class in ("Credit Event", "Geopolitical"):
         rec_scenario = "2. Systemic Credit Crunch"
     else:
         rec_scenario = "3. Tech Bubble Burst"
-        
+
     return {
         "has_trigger": True,
         "recommended_scenario": rec_scenario,
@@ -860,7 +969,7 @@ async def run_stress_test(req: StressTestRequest, state: AppState = Depends(get_
             holdings_market_val += sh * p
         else:
             has_missing = True
-            
+
     if has_missing:
         raise HTTPException(status_code=400, detail="Stress test unavailable due to missing market prices.")
 
@@ -872,9 +981,11 @@ async def run_stress_test(req: StressTestRequest, state: AppState = Depends(get_
         est_txn_cost = 0.0
 
     holdings_market_val = round_currency(holdings_market_val) or 0.0
-    # Total portfolio value equals holdings market value minus cumulative fees (matching Dashboard exactly)
-    total_val = round_currency(holdings_market_val - est_txn_cost)
-    
+    # Available cash = unallocated cash reserves minus cumulative trading fees
+    raw_cash = getattr(state, "cash_balance", 0.0) or 0.0
+    cash_bal = max(0.0, round_currency(raw_cash - est_txn_cost) or 0.0)
+    total_val = round_currency(holdings_market_val + cash_bal)
+
     out = state.stress_engine.run_scenario(state.rebalancer.current_weights, holdings_market_val, req.scenario_name)
     df_stress = out["market_df"]
     shock = state.stress_engine.scenarios.get(req.scenario_name, {})

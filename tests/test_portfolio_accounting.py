@@ -114,8 +114,10 @@ def test_drifted_portfolio_value_not_forced_to_capital(isolated_db):
         
         assert resp.status_code == 200
         data = resp.json()
-        # With 50% price increase, value should be $1,500,000, NOT $1,000,000
-        assert data["total_value"] == pytest.approx(1500000.0, rel=1e-3)
+        # With 50% price increase on default 10 shares ($10,000 -> $15,000) and $990,000 cash, value is $1,005,000
+        assert data["total_value"] == pytest.approx(1005000.0, rel=1e-3)
+        assert data["holdings_market_value"] == pytest.approx(15000.0, rel=1e-3)
+        assert data["cash_balance"] == pytest.approx(990000.0, rel=1e-3)
         assert data["initial_capital"] == 1000000.0
 
 def test_unclassified_event_severity_is_null_not_string(isolated_db):

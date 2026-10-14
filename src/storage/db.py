@@ -133,6 +133,16 @@ class SignalDatabase:
                 """
             )
 
+            # Portfolio cash balance tracking table
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS portfolio_cash (
+                    id INTEGER PRIMARY KEY,
+                    cash_balance REAL NOT NULL
+                )
+                """
+            )
+
             conn.commit()
 
     def get_config(self) -> dict:
@@ -189,6 +199,24 @@ class SignalDatabase:
                     )
             conn.commit()
 
+    def get_cash(self) -> float:
+        """Fetches the persisted cash balance if set."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT cash_balance FROM portfolio_cash WHERE id = 1")
+            row = cursor.fetchone()
+            return float(row[0]) if row is not None else None
+
+    def save_cash(self, cash: float):
+        """Saves current cash balance."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO portfolio_cash (id, cash_balance) VALUES (1, ?)",
+                (float(cash),)
+            )
+            conn.commit()
+
     def save_target_weights_history(self, scan_time: str, target_weights: dict):
         """Saves constituent target weights for a given scan timestamp."""
         with self._get_connection() as conn:
@@ -242,11 +270,12 @@ class SignalDatabase:
 
     def save_latest_orders(self, orders_df: pd.DataFrame):
         """Persists the latest rebalance orders table."""
-        if orders_df is None or orders_df.empty:
-            return
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM latest_orders")
+            if orders_df is None or orders_df.empty:
+                conn.commit()
+                return
             for _, row in orders_df.iterrows():
                 cursor.execute(
                     """
@@ -316,6 +345,7 @@ class SignalDatabase:
             cursor.execute("DELETE FROM holdings")
             cursor.execute("DELETE FROM target_weight_history")
             cursor.execute("DELETE FROM latest_orders")
+            cursor.execute("DELETE FROM portfolio_cash")
             conn.commit()
 
     def get_recent_documents(self, hours: int = 24) -> list:
@@ -328,9 +358,9 @@ class SignalDatabase:
                 """
                 SELECT document_hash, canonical_group_id, normalized_headline, resolved_entities, published_at
                 FROM documents 
-                WHERE published_at >= datetime('now', ?)
+                WHERE published_at >= datetime('now', ?) OR created_at >= datetime('now', ?)
                 ORDER BY published_at DESC
-                """, (f'-{hours} hours',)
+                """, (f'-{hours} hours', f'-{hours} hours')
             )
             rows = cursor.fetchall()
             return [

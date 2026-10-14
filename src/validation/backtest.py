@@ -92,6 +92,7 @@ class HistoricalBacktester:
             # Baseline portfolio setup (equal weight at T0)
             baseline_shares = {t: (rebalancer.initial_capital / len(rebalancer.tickers)) / t0_prices[t] for t in rebalancer.tickers}
             baseline_value_t0 = rebalancer.initial_capital
+            rebalancer.current_shares = baseline_shares.copy()
 
             # 4. Execute existing Module A rebalance
             # Pass signal to rebalancer

@@ -2,6 +2,70 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 
+const TICKER_NAME_MAP: Record<string, string> = {
+  AAPL: 'Apple Inc.',
+  MSFT: 'Microsoft Corporation',
+  NVDA: 'NVIDIA Corporation',
+  AMZN: 'Amazon.com Inc.',
+  GOOGL: 'Alphabet Inc. (Google)',
+  META: 'Meta Platforms Inc.',
+  TSLA: 'Tesla Inc.',
+  JPM: 'JPMorgan Chase & Co.',
+  JNJ: 'Johnson & Johnson',
+  XOM: 'Exxon Mobil Corporation',
+};
+
+const formatCurrency = (val: number | null | undefined) => {
+  if (val == null) return '—';
+  const abs = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return val < 0 ? `-$${abs}` : `$${abs}`;
+};
+
+const CustomDrawdownTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const ticker = data.ticker;
+    const company = TICKER_NAME_MAP[ticker] || data.company_name || ticker;
+    const shock = data.effective_shock_pct ?? data.drawdown;
+    return (
+      <div className="bg-[#161B22] border border-[#30363D] p-3 rounded-lg shadow-xl text-xs space-y-1.5 min-w-[220px]">
+        <div className="font-bold text-sm text-heading border-b border-[#30363D] pb-1 flex justify-between items-center gap-4">
+          <div>
+            <span className="text-white block font-semibold">{company}</span>
+            <span className="text-gray-400 font-mono text-[11px]">Ticker: {ticker}</span>
+          </div>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ${
+            shock < 0 ? 'bg-danger/20 text-danger border border-danger/30' : 'bg-success/20 text-success border border-success/30'
+          }`}>
+            {shock < 0 ? 'Drawdown' : 'Gain'}
+          </span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-gray-400">Pre-Shock Exposure:</span>
+          <span className="font-mono text-gray-200">{formatCurrency(data.exposure ?? data.notional)}</span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-gray-400">Effective Shock:</span>
+          <span className={`font-mono font-bold ${shock < 0 ? 'text-danger' : 'text-success'}`}>
+            {shock != null ? `${shock.toFixed(2)}%` : '—'}
+          </span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-gray-400">Stress P&L:</span>
+          <span className={`font-mono font-bold ${data.pnl < 0 ? 'text-danger' : 'text-success'}`}>
+            {formatCurrency(data.pnl)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-6 pt-1 border-t border-[#30363D]/60">
+          <span className="text-gray-400">Post-Shock Value:</span>
+          <span className="font-mono font-bold text-heading">{formatCurrency(data.post_shock_value)}</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function StressTest() {
   const [scenarios, setScenarios] = useState<any>({});
   const [selectedScenario, setSelectedScenario] = useState<string>('');
@@ -47,12 +111,6 @@ export default function StressTest() {
       setResults(null);
     }
     setIsRunning(false);
-  };
-
-  const formatCurrency = (val: number | null | undefined) => {
-    if (val == null) return '—';
-    const abs = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return val < 0 ? `-$${abs}` : `$${abs}`;
   };
 
   return (
@@ -221,6 +279,22 @@ export default function StressTest() {
               </p>
             </div>
 
+            {/* Dataset 1: Live Tactical Equity Portfolio Stress Preview */}
+            <div className="bg-primary/10 border border-primary/30 p-3.5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono font-bold bg-primary text-white px-2 py-0.5 rounded">DATASET 1</span>
+                  <h5 className="font-bold text-sm text-heading">Live Tactical Equity Portfolio Stress Preview</h5>
+                </div>
+                <p className="text-xs text-gray-300 mt-1">
+                  Models multi-factor shock impact on your live tactical portfolio ($1,000,000 capital baseline, current equity holdings and cash reserve).
+                </p>
+              </div>
+              <span className="text-xs font-mono text-primary bg-background px-2.5 py-1 rounded border border-primary/20 shrink-0">
+                10 S&P Equities • Live Holdings
+              </span>
+            </div>
+
             {/* Portfolio Summary Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-surface border border-border p-3.5 rounded">
@@ -245,16 +319,28 @@ export default function StressTest() {
               </div>
             </div>
 
-            {/* Wholesale Banking Book: By-Asset-Class Summary Table */}
+            {/* Dataset 2: Synthetic Wholesale Banking Book Summary Table */}
             {results.banking_book && (
               <div className="bg-surface border border-border p-4 rounded-lg space-y-3">
+                <div className="bg-blue-950/30 border border-blue-800/40 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold bg-blue-600 text-white px-2 py-0.5 rounded">DATASET 2</span>
+                      <h5 className="font-bold text-sm text-heading">🏛️ Synthetic Wholesale Banking Book ($31,000,000 Portfolio)</h5>
+                    </div>
+                    <p className="text-xs text-gray-300 mt-0.5">
+                      Separate institutional wholesale dataset: 14 positions across Commercial Loans, Bonds, Interest Rate Swaps, and Private Equity.
+                      <strong className="text-amber-300 block mt-0.5">Note: This portfolio is completely separate and independent from the $1,000,000 Module A tactical equity portfolio.</strong>
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-blue-300 bg-background px-2.5 py-1 rounded border border-blue-700/40 shrink-0">
+                    14 Positions • 4 Asset Classes
+                  </span>
+                </div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <h5 className="font-semibold text-sm flex items-center gap-2">
-                      <span>🏛️ Wholesale Banking Book: By-Asset-Class Stress Summary</span>
-                      <span className="text-[10px] bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded border border-blue-700/50">
-                        14 Positions Across 4 Classes
-                      </span>
+                      <span>Wholesale Banking Book: By-Asset-Class Stress Summary</span>
                     </h5>
                     <p className="text-xs text-gray-400 mt-0.5">
                       Multi-asset cross-sensitivities: Loans (ECL + Spread), Bonds (Modified Duration + Spread), Swaps (DV01), Equities (Beta).
@@ -344,10 +430,7 @@ export default function StressTest() {
                       domain={[(dataMin: number) => Math.floor(Math.min(dataMin, -5) * 1.1), 0]}
                       tick={{ fontSize: 12, fill: '#C9D1D9' }}
                     />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#161B22', borderColor: '#30363D', color: '#C9D1D9' }} 
-                      formatter={(val: any) => [`${Number(val).toFixed(2)}%`, 'Effective Shock']}
-                    />
+                    <Tooltip content={<CustomDrawdownTooltip />} />
                     <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />
                     <Bar dataKey="drawdown" name="Drawdown (%)">
                       {results.asset_results.map((entry: any, index: number) => (

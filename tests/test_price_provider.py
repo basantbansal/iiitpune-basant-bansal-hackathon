@@ -129,8 +129,8 @@ def test_module_a_numerical_regression(mock_yfinance):
     assert tsla_row["New Weight Float"] == pytest.approx(6.20, rel=1e-3)
     assert msft_row["New Weight Float"] == pytest.approx(10.00, rel=1e-3)
     
-    assert nvda_row["Trade Value ($)"] == pytest.approx(38000.00, rel=1e-3)
-    assert tsla_row["Trade Value ($)"] == pytest.approx(38000.00, rel=1e-3)
+    assert nvda_row["Trade Value ($)"] == pytest.approx(380.00, rel=1e-3)
+    assert tsla_row["Trade Value ($)"] == pytest.approx(380.00, rel=1e-3)
     assert msft_row["Trade Value ($)"] == pytest.approx(0.00, abs=1e-2)
 
     assert rebalancer.current_weights["NVDA"] == pytest.approx(0.1380, abs=1e-4)

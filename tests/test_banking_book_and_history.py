@@ -91,3 +91,8 @@ def test_stress_trigger_scenario_mapping():
     res = asyncio.run(get_stress_trigger(state=mock_state))
     assert res["has_trigger"] is True
     assert res["recommended_scenario"] == "3. Tech Bubble Burst"
+
+    # Case 5: High impact unclassified / routine noise event must NOT trigger stress scenario
+    mock_state.signals_log = [{"impact_score": 9, "event_classification": "Unclassified / Needs Review", "entity": "AAPL", "headline": "Ambiguous commentary"}]
+    res = asyncio.run(get_stress_trigger(state=mock_state))
+    assert res["has_trigger"] is False

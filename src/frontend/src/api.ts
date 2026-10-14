@@ -41,4 +41,22 @@ export const api = {
   }).then(r => r.json()),
   
   resetData: () => fetch(`${API_BASE}/reset`, { method: "POST", cache: "no-store" }).then(r => r.json()),
+
+  updateHoldings: (holdings: Record<string, number>) => fetch(`${API_BASE}/portfolio/holdings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ holdings }),
+    cache: "no-store"
+  }).then(async r => {
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: "Failed to update holdings" }));
+      throw new Error(err.detail || "Failed to update holdings");
+    }
+    return r.json();
+  }),
+
+  resetHoldings: () => fetch(`${API_BASE}/portfolio/reset-holdings`, {
+    method: "POST",
+    cache: "no-store"
+  }).then(r => r.json()),
 };

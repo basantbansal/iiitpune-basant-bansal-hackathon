@@ -30,8 +30,37 @@ class PriceProvider:
         prices = self.get_prices([ticker])
         return prices.get(ticker)
 
+    REFERENCE_PRICE_FALLBACK = 100.0
+
     def get_prices(self, tickers: list) -> dict:
         return {t: self._prices.get(t) for t in tickers}
+
+    def get_prices_with_metadata(self, tickers: list) -> dict:
+        """
+        Returns constituent prices with explicit disclosure of live vs reference fallback status.
+        Never silently mixes placeholder prices with live prices.
+        """
+        result = {}
+        for t in tickers:
+            p = self._prices.get(t)
+            if p is not None and p > 0:
+                result[t] = {
+                    "price": float(p),
+                    "is_fallback": False,
+                    "source": "Live Market (Yahoo Finance)"
+                }
+            else:
+                result[t] = {
+                    "price": self.REFERENCE_PRICE_FALLBACK,
+                    "is_fallback": True,
+                    "source": f"Deterministic Reference (${self.REFERENCE_PRICE_FALLBACK:.2f})"
+                }
+        all_live = all(not item["is_fallback"] for item in result.values())
+        return {
+            "all_live": all_live,
+            "any_fallback": any(item["is_fallback"] for item in result.values()),
+            "constituents": result
+        }
 
     def refresh_prices(self, tickers: list, timeout: int = 5) -> None:
         try:

@@ -44,6 +44,16 @@ class AppState:
         elif any(v is not None for v in self.rebalancer.current_shares.values()):
             self.db.save_holdings(self.rebalancer.current_shares)
 
+        # Restore persisted cash balance if available, or initialize from budget minus invested holdings
+        persisted_cash = self.db.get_cash()
+        if persisted_cash is not None:
+            self.cash_balance = float(persisted_cash)
+        else:
+            prices = self.rebalancer.fetch_current_prices()
+            invested_val = sum(float(self.rebalancer.current_shares.get(t, 10.0) or 0.0) * (prices.get(t) or 100.0) for t in self.rebalancer.tickers)
+            self.cash_balance = max(0.0, round(float(self.initial_capital) - invested_val, 2))
+            self.db.save_cash(self.cash_balance)
+
         # Restore latest target weights if available
         latest_weights = self.db.get_latest_target_weights()
         if latest_weights:
@@ -52,23 +62,10 @@ class AppState:
         # Load persisted historical state for display
         self.signals_log: List[Dict[str, Any]] = self.db.get_all_signals()
         
-        # Restore persisted orders or reconstruct from active signals
+        # Restore persisted orders
         persisted_orders = self.db.get_latest_orders()
         if not persisted_orders.empty:
             self.latest_orders = persisted_orders
-        elif self.signals_log:
-            signals_for_rebalance = [
-                s for s in self.signals_log
-                if not s.get("is_stale", False) and (self.data_mode != "Live Market (Google RSS)" or not s.get("is_synthetic", False))
-            ]
-            if signals_for_rebalance:
-                try:
-                    self.latest_orders = self.rebalancer.rebalance(signals_for_rebalance)
-                    self.db.save_latest_orders(self.latest_orders)
-                except Exception:
-                    self.latest_orders = pd.DataFrame()
-            else:
-                self.latest_orders = pd.DataFrame()
         else:
             self.latest_orders = pd.DataFrame()
 
@@ -84,12 +81,18 @@ class AppState:
         persisted = self.db.get_holdings()
         if persisted:
             self.rebalancer.current_shares = persisted
-        elif any(v is not None for v in self.rebalancer.current_shares.values()):
-            self.db.save_holdings(self.rebalancer.current_shares)
         else:
             self.rebalancer._initialize_shares()
-            if any(v is not None for v in self.rebalancer.current_shares.values()):
-                self.db.save_holdings(self.rebalancer.current_shares)
+            self.db.save_holdings(self.rebalancer.current_shares)
+
+        persisted_cash = self.db.get_cash()
+        if persisted_cash is not None:
+            self.cash_balance = float(persisted_cash)
+        else:
+            prices = self.rebalancer.fetch_current_prices()
+            invested_val = sum(float(self.rebalancer.current_shares.get(t, 10.0) or 0.0) * (prices.get(t) or 100.0) for t in self.rebalancer.tickers)
+            self.cash_balance = max(0.0, round(float(self.initial_capital) - invested_val, 2))
+            self.db.save_cash(self.cash_balance)
 
     async def reset_runtime(self):
         async with self.lock:
@@ -99,8 +102,12 @@ class AppState:
             self.last_updated = "Never"
             self.rebalancer.current_weights = {t: 1.0 / len(self.rebalancer.tickers) for t in self.rebalancer.tickers}
             self.rebalancer._initialize_shares()
-            if any(v is not None for v in self.rebalancer.current_shares.values()):
-                self.db.save_holdings(self.rebalancer.current_shares)
+            self.db.save_holdings(self.rebalancer.current_shares)
+            prices = self.rebalancer.fetch_current_prices()
+            invested_val = sum(float(self.rebalancer.current_shares.get(t, 10.0) or 0.0) * (prices.get(t) or 100.0) for t in self.rebalancer.tickers)
+            remaining_cash = max(0.0, round(float(self.initial_capital) - invested_val, 2))
+            self.cash_balance = remaining_cash
+            self.db.save_cash(remaining_cash)
 
     async def get_lock(self):
         return self.lock

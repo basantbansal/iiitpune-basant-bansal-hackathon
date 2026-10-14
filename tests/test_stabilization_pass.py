@@ -130,8 +130,8 @@ def test_accounting_price_change_changes_value_and_restart_preserves_holdings(is
         resp2 = client.get("/api/portfolio/metrics")
         app.dependency_overrides.clear()
 
-        # Value must reflect 20% price gain ($1,200,000), not reset to $1,000,000 capital
-        assert resp2.json()["total_value"] == pytest.approx(1_200_000.0, rel=1e-3)
+        # Value must reflect 20% price gain on 10 shares each ($10,000 -> $12,000) + $990,000 cash ($1,002,000), not reset to $1,000,000 capital
+        assert resp2.json()["total_value"] == pytest.approx(1_002_000.0, rel=1e-3)
 
 def test_accounting_transaction_cost_deducted_and_reconciles(isolated_db):
     """Trading costs (turnover * 0.0010) must be deducted from portfolio value and reconcile."""
@@ -578,8 +578,9 @@ def test_final_pass_a1_shares_reconciliation(tmp_path):
             assert post_sh is not None
             # pre + signed_qty == post within 2 decimal rounding
             assert math.isclose(pre_sh + signed_qty, post_sh, abs_tol=0.02)
-            # pre_shares * price ~= baseline value ($100,000 for $1M initial capital)
-            assert math.isclose(pre_sh * price, 100_000.0, rel_tol=1e-2)
+            # pre_shares == 10.0 for default portfolio
+            assert math.isclose(pre_sh, 10.0, abs_tol=1e-2)
+            assert math.isclose(pre_sh * price, 10.0 * price, rel_tol=1e-2)
 
         app.dependency_overrides.clear()
 
@@ -674,6 +675,10 @@ def test_fee_rounding_and_full_reconciliation(tmp_path):
         # Initialize holdings at baseline ($200,000 each = $2,000,000 total)
         state.rebalancer.initial_capital = 2_000_000.0
         state.rebalancer.current_shares = {t: 200_000.0 / fixed_prices[t] for t in state.rebalancer.tickers}
+        state.db.save_holdings(state.rebalancer.current_shares)
+
+        state.cash_balance = 1000.0
+        state.db.save_cash(1000.0)
 
         # Simulate exact buys ($44,222.50) and sells ($44,222.50) -> gross turnover = $88,445.00
         state.latest_orders = pd.DataFrame([
@@ -695,15 +700,16 @@ def test_fee_rounding_and_full_reconciliation(tmp_path):
         assert metrics["one_way_turnover"] == 44222.50
         assert metrics["est_txn_cost"] == 88.45
         assert metrics["cumulative_fees_paid"] == 88.45
-        assert metrics["cash_balance"] == -88.45
+        assert metrics["cash_balance"] == 911.55
+        assert metrics["cash_balance"] >= 0.0
         assert metrics["holdings_market_value"] == 2000000.0
-        assert metrics["total_value"] == 1999911.55
+        assert metrics["total_value"] == 2000911.55
         # Reconciles: Holdings + Cash = Total Value
         assert math.isclose(metrics["holdings_market_value"] + metrics["cash_balance"], metrics["total_value"], abs_tol=1e-5)
 
         # 3. Test stress test endpoint pre-shock baseline consistency
         stress_res = client.post("/api/stress-test", json={"scenario_name": "1. 2022 Fed Tightening Shock"}).json()
-        assert stress_res["total_value"] == 1999911.55
+        assert stress_res["total_value"] == 2000911.55
         # Pre-shock exactly matches metrics total_value
         assert stress_res["total_value"] == metrics["total_value"]
         # Invariant: Pre-shock + P&L = Post-shock

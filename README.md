@@ -19,7 +19,7 @@ Conventional indices often rely on equal-weight or cap-weight methodologies with
 We developed an institutional-grade, event-driven risk analytics and portfolio intelligence platform combining:
 1. **Real-Time Dual-Source Ingestion**: Simultaneously ingests unstructured financial news from Google News RSS and Yahoo Finance RSS, with publisher attribution, timestamp parsing, and cryptographic deduplication to minimize noise and duplicate reporting.
 2. **Explainable Hybrid NLP Risk Engine**: Uses an ultra-fast Groq LLaMA 3.3 70B model in structured JSON mode with deterministic finance-aware fallback rules when cloud inference is unavailable or an API key is not configured.
-3. **Module A — Tactical Index Rebalancer**: Applies alpha tilts to a 10-constituent mega-cap universe with a $2,000,000 baseline AUM and strict tracking-error constraints.
+3. **Module A — Tactical Index Rebalancer**: Applies alpha tilts to a 10-constituent mega-cap universe with a $1,000,000 baseline capital budget and strict tracking-error constraints.
 4. **Module B — Macro & Credit Stress Testing Engine**: Evaluates portfolio resilience across historical and hypothetical macro scenarios, including Fed tightening shocks, systemic credit crunches, and technology-driven drawdowns.
 
 > **Regulatory Disclaimer:** This application is an academic prototype developed exclusively for the S&P Global & CRISIL Campus Hackathon 2026 for demonstration and architectural evaluation. It is intended for educational and research use only.
@@ -126,7 +126,7 @@ Open two terminal windows:
 **Terminal 1 — Backend (FastAPI):**
 ```bash
 source venv/bin/activate
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 Wait for this "INFO:Application startup complete" message , after this only run the next commands (~60s)
 

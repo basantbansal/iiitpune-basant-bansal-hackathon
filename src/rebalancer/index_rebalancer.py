@@ -70,16 +70,23 @@ class IndexRebalancer:
         """Fetches the latest market close prices for the index constituents."""
         return self.price_provider.get_prices(self.tickers)
 
+    DEFAULT_SHARES_PER_CONSTITUENT: float = 10.0
+
     def _initialize_shares(self):
-        """Initializes the baseline holdings based on starting prices."""
-        prices = self.fetch_current_prices()
-        per_asset_capital = self.initial_capital / len(self.tickers)
-        for t in self.tickers:
-            p = prices.get(t)
-            if p is not None and p > 0:
-                self.current_shares[t] = per_asset_capital / p
-            else:
-                self.current_shares[t] = None
+        """Initializes the baseline holdings with default 10 shares per monitored S&P constituent, or proportional capital for custom tickers."""
+        is_default_constituents = (len(self.tickers) == 10 and set(self.tickers) == {"AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "JPM", "JNJ", "XOM"})
+        if is_default_constituents:
+            for t in self.tickers:
+                self.current_shares[t] = self.DEFAULT_SHARES_PER_CONSTITUENT
+        else:
+            prices = self.fetch_current_prices()
+            per_asset_capital = self.initial_capital / len(self.tickers)
+            for t in self.tickers:
+                p = prices.get(t)
+                if p is not None and p > 0:
+                    self.current_shares[t] = per_asset_capital / p
+                else:
+                    self.current_shares[t] = 10.0
 
     def rebalance(self, signals: List[Dict[str, Any]]) -> pd.DataFrame:
         """
