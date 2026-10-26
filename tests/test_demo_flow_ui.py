@@ -1,89 +1,148 @@
+"""
+Integration test validating the full demo lifecycle and API contract.
+Replaces the legacy Streamlit prototype test with active validation of:
+- Clean launch state
+- Offline crisis replay scan and rebalancing
+- Target weight and order derivation
+- Universe switching and state invalidation
+- Reset semantics and benchmark restoration
+"""
 import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import patch
+from src.api.main import app
+from src.api.dependencies import get_state, AppState
+from src.storage.db import SignalDatabase
 
-# Obsolete Streamlit test; coverage moved to test_duplicate_bug.py and test_regression_state.py
-# from streamlit.testing.v1 import AppTest
-# from src.dashboard.app import get_core_systems
 
-def test_demo_flow_comprehensive_obsolete():
-    pytest.skip("Test disabled as Streamlit dashboard is obsolete. Covered by test_regression_state.py and test_duplicate_bug.py.")
+@pytest.fixture
+def clean_demo_state(tmp_path):
+    db_file = str(tmp_path / "demo_flow_lifecycle.db")
+    custom_db = SignalDatabase(db_file)
 
-    # --- Session 1 ---
-    at = AppTest.from_file("../src/dashboard/app.py").run(timeout=30)
-    assert not at.exception
+    with patch("src.api.dependencies.SignalDatabase", return_value=custom_db):
+        state = AppState()
+        state.db = custom_db
+        state.data_mode = "Offline Crisis Replay"
+        app.dependency_overrides[get_state] = lambda: state
+        yield state, custom_db
+        app.dependency_overrides.clear()
 
-    # 1. Verify reset button is absent
-    assert not any("Restart Demo" in str(getattr(widget, 'label', '')) for widget in at.sidebar.button)
 
-    # 2. Select Offline mode
-    at.sidebar.radio[0].set_value("Offline Crisis Replay")
-    at = at.run(timeout=30)
+def test_demo_flow_comprehensive_api_lifecycle(clean_demo_state):
+    state, db = clean_demo_state
+    client = TestClient(app)
 
-    # 3. First offline replay
-    at.button[0].click()
-    at = at.run(timeout=60)
-    assert not at.exception
+    # ---------------------------------------------------------
+    # Stage 1: Fresh Launch Verification
+    # ---------------------------------------------------------
+    p_resp = client.get("/api/portfolio")
+    assert p_resp.status_code == 200
+    portfolio_rows = p_resp.json()
+    assert isinstance(portfolio_rows, list)
+    assert len(portfolio_rows) == 10
 
-    # Verify signals generated
-    signals_tab = at.tabs[1]
-    df = signals_tab.dataframe[0].value
-    assert len(df) > 0
-    first_run_signals = len(df)
+    m_resp = client.get("/api/portfolio/metrics")
+    assert m_resp.status_code == 200
+    m_data = m_resp.json()
+    assert m_data["last_updated"] == "No scan executed yet"
 
-    # 4. Second offline replay in the same session
-    at.button[0].click()
-    at = at.run(timeout=60)
-    assert not at.exception
+    # Verify no old signals or simulated orders before scan
+    sig_resp = client.get("/api/risk-signals")
+    assert sig_resp.status_code == 200
+    assert len(sig_resp.json()) == 0
 
-    # Verify signals generated again (should double because offline run ID bypasses deduplication)
-    # The new signals are appended
-    df = at.tabs[1].dataframe[0].value
-    assert len(df) == first_run_signals * 2
+    ord_resp = client.get("/api/orders")
+    assert ord_resp.status_code == 200
+    assert len(ord_resp.json()) == 0
 
-    # --- Session 2 (Fresh UI Session) ---
-    at2 = AppTest.from_file("../src/dashboard/app.py").run(timeout=30)
-    assert not at2.exception
+    cov_resp = client.get("/api/market-scan/coverage")
+    assert cov_resp.status_code == 200
+    cov_data = cov_resp.json()
+    assert cov_data["total_constituents"] == 10
+    for item in cov_data["coverage"]:
+        assert item["coverage_state"] in ["PENDING", "NO_SCAN_EXECUTED_YET"]
+        assert item["signals_count"] == 0
 
-    # Verify DB still has records (No scan or rerun deletes existing SQLite audit records)
-    with db._get_connection() as conn:
-        current_records = conn.execute("SELECT COUNT(*) FROM risk_signals").fetchone()[0]
-    assert current_records > initial_records
+    # ---------------------------------------------------------
+    # Stage 2: Execute Replay Market Scan & Rebalancing
+    # ---------------------------------------------------------
+    scan_resp = client.post("/api/market-scan")
+    assert scan_resp.status_code == 200
+    scan_data = scan_resp.json()
+    assert "message" in scan_data
+    assert len(scan_data["new_signals"]) > 0
 
-    at2.sidebar.radio[0].set_value("Offline Crisis Replay")
-    at2 = at2.run(timeout=30)
+    # Signals and orders are now populated
+    sig_resp2 = client.get("/api/risk-signals")
+    assert sig_resp2.status_code == 200
+    assert len(sig_resp2.json()) > 0
 
-    # Verify UI starts clean
-    df2 = at2.tabs[1].dataframe[0].value if at2.tabs[1].dataframe else []
-    assert len(df2) == 0
+    ord_resp2 = client.get("/api/orders")
+    assert ord_resp2.status_code == 200
+    orders = ord_resp2.json()
+    assert len(orders) > 0
 
-    # 5. Offline replay in fresh session
-    at2.button[0].click()
-    at2 = at2.run(timeout=60)
-    assert not at2.exception
+    # Verify orders contain execution rationale and valid quantities
+    for order in orders:
+        assert "Ticker" in order
+        assert "Action" in order
+        assert order["Action"] in ["BUY", "SELL", "HOLD"]
+        assert "Target Shares" in order
+        assert float(order["Target Shares"]) >= 0.0
 
-    df2_after = at2.tabs[1].dataframe[0].value
-    assert len(df2_after) > 0
-    assert len(df2_after) == first_run_signals
+    # Portfolio metrics timestamp is updated
+    m_data2 = client.get("/api/portfolio/metrics").json()
+    assert m_data2["last_updated"] not in ["Never", "No scan executed yet"]
 
-    # --- Live Feed Deduplication ---
-    # Switch to Live
-    at2.sidebar.radio[0].set_value("Live Market (Google RSS)")
-    at2 = at2.run(timeout=30)
+    # Coverage matrix reflects scanned items
+    cov_resp2 = client.get("/api/market-scan/coverage")
+    assert cov_resp2.status_code == 200
+    cov_data2 = cov_resp2.json()
+    assert cov_data2["total_signals"] > 0
 
-    # Execute scan twice
-    at2.button[0].click()
-    at2 = at2.run(timeout=60)
-    live_df_1 = at2.tabs[1].dataframe[0].value
-    live_count = len(live_df_1)
+    # ---------------------------------------------------------
+    # Stage 3: Universe Switching Invalidation
+    # ---------------------------------------------------------
+    indian_ids = [
+        "IN_RELIANCE", "IN_TCS", "IN_HDFCBANK", "IN_INFY", "IN_ICICIBANK",
+        "IN_HINDUNILVR", "IN_ITC", "IN_BHARTIARTL", "IN_LT", "IN_SBIN"
+    ]
+    switch_resp = client.put("/api/universe/selection", json={"selection": indian_ids})
+    assert switch_resp.status_code == 200
+    switch_data = switch_resp.json()
+    assert switch_data["status"] == "ok"
+    assert len(switch_data["selection"]) == 10
 
-    at2.button[0].click()
-    at2 = at2.run(timeout=60)
-    live_df_2 = at2.tabs[1].dataframe[0].value
-    # Since it's live, deduplication should prevent adding the same articles again immediately
-    # Assuming live feed doesn't change in 1 second
-    assert len(live_df_2) == live_count
+    # Set reporting currency to INR for the Indian universe
+    client.post("/api/reporting-currency", json={"currency": "INR"})
+    m_data3 = client.get("/api/portfolio/metrics").json()
+    assert m_data3["last_updated"] == "No scan executed yet"
+    assert m_data3["reporting_currency"] == "INR"
 
-    # Verify empty state message behavior if no new signals were generated
-    if len(live_df_2) == live_count:
-        # Check if the info message is displayed correctly
-        info_msgs = [m.value for m in at2.info]
-        assert any("skipped" in msg or "No articles retrieved" in msg for msg in info_msgs)
+    p_rows3 = client.get("/api/portfolio").json()
+    tickers = [p["ticker"] for p in p_rows3]
+    assert "RELIANCE" in tickers
+    assert "AAPL" not in tickers
+
+    sig_resp3 = client.get("/api/risk-signals")
+    assert sig_resp3.status_code == 200
+    assert len(sig_resp3.json()) == 0
+
+    ord_resp3 = client.get("/api/orders")
+    assert ord_resp3.status_code == 200
+    assert len(ord_resp3.json()) == 0
+
+    # ---------------------------------------------------------
+    # Stage 4: Reset Semantics
+    # ---------------------------------------------------------
+    reset_resp = client.post("/api/reset")
+    assert reset_resp.status_code == 200
+
+    m_data4 = client.get("/api/portfolio/metrics").json()
+    assert m_data4["last_updated"] == "No scan executed yet"
+
+    p_rows4 = client.get("/api/portfolio").json()
+    for item in p_rows4:
+        assert item["pre_shares"] == 10.0
+        assert item["current_shares"] == 10.0

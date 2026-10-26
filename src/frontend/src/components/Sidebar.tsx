@@ -1,41 +1,53 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { PanelLeftClose, Settings, Sliders } from 'lucide-react';
+import { PanelLeftClose, Settings, Sliders, Globe } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onConfigChange: () => void;
   onOpenCustomizer?: () => void;
+  onOpenUniverseSelector?: () => void;
 }
 
-export default function Sidebar({ isOpen, onClose, onConfigChange, onOpenCustomizer }: SidebarProps) {
+export default function Sidebar({ isOpen, onClose, onConfigChange, onOpenCustomizer, onOpenUniverseSelector }: SidebarProps) {
   const [dataMode, setDataMode] = useState("Live Market (Google RSS)");
   const [initialCapital, setInitialCapital] = useState(1000000);
   const [alphaTilt, setAlphaTilt] = useState(0.05);
   const [maxItems, setMaxItems] = useState(2);
+  const [reportingCurrency, setReportingCurrency] = useState("INR");
   const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    api.getConfig().then(config => {
+    Promise.all([
+      api.getConfig(),
+      api.getReportingCurrency().catch(() => ({ reporting_currency: 'INR' }))
+    ]).then(([config, repCurrRes]) => {
       setDataMode(config.data_mode);
       setInitialCapital(config.initial_capital);
       setAlphaTilt(config.alpha_tilt);
       setMaxItems(config.max_items ?? 2);
+      if (repCurrRes?.reporting_currency) {
+        setReportingCurrency(repCurrRes.reporting_currency);
+      } else if (config.reporting_currency) {
+        setReportingCurrency(config.reporting_currency);
+      }
     }).catch(console.error);
   }, []);
 
   const handleUpdate = async () => {
-    if (initialCapital > 1000000 || initialCapital <= 0) return;
+    if (initialCapital <= 0) return;
     setIsSaving(true);
     try {
       await api.updateConfig({
         data_mode: dataMode,
         initial_capital: initialCapital,
         alpha_tilt: alphaTilt,
-        max_items: maxItems
+        max_items: maxItems,
+        reporting_currency: reportingCurrency
       });
+      await api.setReportingCurrency(reportingCurrency);
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2500);
       onConfigChange();
@@ -75,6 +87,24 @@ export default function Sidebar({ isOpen, onClose, onConfigChange, onOpenCustomi
           >
             <PanelLeftClose size={18} />
           </button>
+        </div>
+
+        {/* Reporting Currency Section */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Reporting Currency
+          </label>
+          <select
+            value={reportingCurrency}
+            onChange={e => setReportingCurrency(e.target.value)}
+            className="w-full bg-background border border-border rounded-lg p-2.5 text-xs text-heading focus:outline-hidden focus:border-primary transition-colors font-medium"
+          >
+            <option value="INR">₹ INR — Indian Rupee (Default)</option>
+            <option value="USD">$ USD — US Dollar</option>
+          </select>
+          <p className="text-[11px] text-gray-500 mt-1">
+            Global consolidated portfolio reporting currency. Native instruments retain their traded currency.
+          </p>
         </div>
 
         {/* Data Feed Section */}
@@ -161,8 +191,18 @@ export default function Sidebar({ isOpen, onClose, onConfigChange, onOpenCustomi
           </div>
 
           {/* Quick link to constituent customization */}
-          {onOpenCustomizer && (
-            <div className="pt-1">
+          <div className="pt-1 flex flex-col gap-2">
+            {onOpenUniverseSelector && (
+              <button
+                type="button"
+                onClick={onOpenUniverseSelector}
+                className="w-full flex items-center justify-center gap-2 bg-background hover:bg-border/60 border border-border text-heading px-3 py-2 rounded-lg text-xs font-semibold transition-all shadow-xs"
+              >
+                <Globe size={14} className="text-primary" />
+                <span>Select Stock Universe (10 / 20)</span>
+              </button>
+            )}
+            {onOpenCustomizer && (
               <button
                 type="button"
                 onClick={onOpenCustomizer}
@@ -171,8 +211,8 @@ export default function Sidebar({ isOpen, onClose, onConfigChange, onOpenCustomi
                 <Sliders size={14} />
                 <span>Customize Stock Weights</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Live Feed Options */}

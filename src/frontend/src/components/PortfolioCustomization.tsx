@@ -18,6 +18,9 @@ export interface ConstituentStock {
   price: number;
   isLivePrice: boolean;
   shares: number;
+  currency?: string;
+  currencySymbol?: string;
+  market?: string;
 }
 
 const DEFAULT_CONSTITUENTS_CONFIG = [
@@ -52,24 +55,41 @@ export default function PortfolioCustomization({
   portfolioData = [],
   onHoldingsUpdated,
 }: PortfolioCustomizationProps) {
-  // Extract live prices and current shares from portfolioData
+  // Extract live prices and current shares from portfolioData dynamically
   const constituentList: ConstituentStock[] = useMemo(() => {
-    return DEFAULT_CONSTITUENTS_CONFIG.map(def => {
-      const live = portfolioData.find(p => p.ticker === def.ticker);
-      const livePrice = live?.price != null && live.price > 0 ? live.price : null;
-      // If live market price is available, use it; otherwise use deterministic reference price $100.00
-      const price = livePrice !== null ? livePrice : 100.0;
-      const isLivePrice = livePrice !== null;
-      
-      // Existing shares from backend (default 10 shares per constituent)
-      const existingShares = live?.pre_shares != null ? Math.round(live.pre_shares) : 10;
+    if (portfolioData && portfolioData.length > 0) {
+      return portfolioData.map(p => {
+        const livePrice = p.price != null && p.price > 0 ? p.price : null;
+        const currency = p.currency || 'USD';
+        const currencySymbol = p.currency_symbol || (currency === 'INR' ? '₹' : '$');
+        const defaultRef = currency === 'INR' ? 1000.0 : 100.0;
+        const refPrice = p.reference_price != null ? p.reference_price : defaultRef;
+        const price = livePrice !== null ? livePrice : refPrice;
+        const isLivePrice = livePrice !== null && !p.is_fallback_price;
+        const existingShares = p.pre_shares != null ? Math.round(p.pre_shares) : (p.current_shares != null ? Math.round(p.current_shares) : 10);
+        return {
+          ticker: p.ticker,
+          name: p.company_name || p.ticker,
+          price,
+          isLivePrice,
+          shares: existingShares,
+          currency,
+          currencySymbol,
+          market: p.market || 'US',
+        };
+      });
+    }
 
+    return DEFAULT_CONSTITUENTS_CONFIG.map(def => {
       return {
         ticker: def.ticker,
-        name: live?.company_name || def.name,
-        price,
-        isLivePrice,
-        shares: existingShares,
+        name: def.name,
+        price: 100.0,
+        isLivePrice: false,
+        shares: 10,
+        currency: 'USD',
+        currencySymbol: '$',
+        market: 'US'
       };
     });
   }, [portfolioData]);
@@ -95,17 +115,38 @@ export default function PortfolioCustomization({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  if (!isOpen) return null;
+  const hasMixedCurrencies = useMemo(() => {
+    const currencies = new Set(constituentList.map(c => c.currency || 'USD'));
+    return currencies.size > 1;
+  }, [constituentList]);
 
-  // Real-time financial calculations
-  const totalInvestedValue = constituentList.reduce((sum, item) => {
-    const qty = draftShares[item.ticker] || 0;
-    return sum + (qty * item.price);
-  }, 0);
+  const hasInrHoldings = useMemo(() => {
+    return constituentList.some(c => c.currency === 'INR');
+  }, [constituentList]);
 
-  const roundedInvested = Number(totalInvestedValue.toFixed(2));
-  const remainingCash = Number((initialCapital - roundedInvested).toFixed(2));
-  const totalPortfolioValue = initialCapital; // Budget = Invested + Cash
+  // Real-time financial calculations (separated by currency to avoid commingling USD and INR)
+  const usdInvestedValue = useMemo(() => {
+    return constituentList
+      .filter(item => (item.currency || 'USD') === 'USD')
+      .reduce((sum, item) => sum + ((draftShares[item.ticker] || 0) * item.price), 0);
+  }, [constituentList, draftShares]);
+
+  const inrInvestedValue = useMemo(() => {
+    return constituentList
+      .filter(item => item.currency === 'INR')
+      .reduce((sum, item) => sum + ((draftShares[item.ticker] || 0) * item.price), 0);
+  }, [constituentList, draftShares]);
+
+  const isIndiaOnly = hasInrHoldings && !constituentList.some(c => (c.currency || 'USD') === 'USD');
+  const inrBudget = initialCapital >= 10_000_000 ? initialCapital : initialCapital * 84.0;
+  const effectiveBudget = isIndiaOnly ? inrBudget : initialCapital;
+
+  const roundedInvested = Number(usdInvestedValue.toFixed(2));
+  const roundedInrInvested = Number(inrInvestedValue.toFixed(2));
+  const remainingCash = Number((effectiveBudget - (isIndiaOnly ? roundedInrInvested : roundedInvested)).toFixed(2));
+  const totalPortfolioValue = effectiveBudget; // Budget = Invested + Cash
+  const currSymbol = isIndiaOnly ? '₹' : '$';
+  const currName = isIndiaOnly ? 'INR' : 'USD';
 
   // Validations
   const hasNegativeShares = Object.values(draftShares).some(qty => qty < 0);
@@ -117,8 +158,10 @@ export default function PortfolioCustomization({
   // Tracking error constraints check (5% to 15%)
   const outOfBoundsHoldings = constituentList.filter(item => {
     const qty = draftShares[item.ticker] || 0;
-    if (roundedInvested <= 0) return false;
-    const weightPct = ((qty * item.price) / roundedInvested) * 100;
+    const sameCurrencyHoldings = constituentList.filter(c => (c.currency || 'USD') === (item.currency || 'USD'));
+    const totalSameCurr = sameCurrencyHoldings.reduce((sum, c) => sum + ((draftShares[c.ticker] || 0) * c.price), 0);
+    if (totalSameCurr <= 0) return false;
+    const weightPct = ((qty * item.price) / totalSameCurr) * 100;
     return weightPct < RISK_ENGINE_MIN_WEIGHT_PCT || weightPct > RISK_ENGINE_MAX_WEIGHT_PCT;
   });
 
@@ -136,7 +179,7 @@ export default function PortfolioCustomization({
   };
 
   const handleEqualWeightAllocation = () => {
-    const perAssetCapital = initialCapital / constituentList.length; // e.g. $100,000 each
+    const perAssetCapital = effectiveBudget / constituentList.length;
     const nextShares: Record<string, number> = {};
     const nextStrings: Record<string, string> = {};
 
@@ -204,6 +247,8 @@ export default function PortfolioCustomization({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
       {/* Dark backdrop */}
@@ -253,53 +298,74 @@ export default function PortfolioCustomization({
                 <span>Starting Budget</span>
               </div>
               <div className="text-sm sm:text-base font-bold font-mono text-heading">
-                ${initialCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {currSymbol}{effectiveBudget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="text-[10px] text-gray-500 mt-0.5">Max $1,000,000.00</div>
+              <div className="text-[10px] text-gray-500 mt-0.5">Budget ({currName})</div>
             </div>
 
             <div className="bg-background/80 border border-border rounded-xl p-3">
               <div className="text-[11px] font-medium text-gray-400 flex items-center gap-1 mb-1">
                 <Coins size={12} className="text-primary" />
-                <span>Invested Value</span>
+                <span>{hasInrHoldings && !isIndiaOnly ? 'USD Holdings' : 'Invested Value'}</span>
               </div>
               <div className="text-sm sm:text-base font-bold font-mono text-heading">
-                ${roundedInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {currSymbol}{(isIndiaOnly ? roundedInrInvested : roundedInvested).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-[10px] text-gray-500 mt-0.5">
-                {initialCapital > 0 ? `${((roundedInvested / initialCapital) * 100).toFixed(1)}% deployed` : '0%'}
+                {effectiveBudget > 0 ? `${(((isIndiaOnly ? roundedInrInvested : roundedInvested) / effectiveBudget) * 100).toFixed(1)}% deployed` : '0%'}
               </div>
             </div>
+
+            {hasMixedCurrencies ? (
+              <div className="bg-background/80 border border-border rounded-xl p-3">
+                <div className="text-[11px] font-medium text-gray-400 flex items-center gap-1 mb-1">
+                  <Coins size={12} className="text-orange-400" />
+                  <span>INR Holdings</span>
+                </div>
+                <div className="text-sm sm:text-base font-bold font-mono text-heading">
+                  ₹{roundedInrInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  Native NSE quotes
+                </div>
+              </div>
+            ) : (
+              <div className="bg-background/80 border border-border rounded-xl p-3">
+                <div className="text-[11px] font-medium text-gray-400 flex items-center gap-1 mb-1">
+                  <span>Total Portfolio</span>
+                </div>
+                <div className="text-sm sm:text-base font-bold font-mono text-heading">
+                  {currSymbol}{totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">Holdings + Cash</div>
+              </div>
+            )}
 
             <div className={`border rounded-xl p-3 ${
               exceedsBudget ? 'bg-amber-500/10 border-amber-500/30' : 'bg-background/80 border border-border'
             }`}>
               <div className="text-[11px] font-medium text-gray-400 flex items-center gap-1 mb-1">
                 <DollarSign size={12} className={exceedsBudget ? 'text-amber-400' : 'text-success'} />
-                <span>Remaining Cash</span>
+                <span>Remaining {currName} Cash</span>
               </div>
               <div className={`text-sm sm:text-base font-bold font-mono ${
                 exceedsBudget ? 'text-amber-400' : 'text-success'
               }`}>
                 {remainingCash < 0 
-                  ? `-$${Math.abs(remainingCash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                  : `$${remainingCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  ? `-${currSymbol}${Math.abs(remainingCash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                  : `${currSymbol}${remainingCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </div>
               <div className="text-[10px] text-gray-500 mt-0.5">
                 {exceedsBudget ? 'Exceeds budget' : 'Unallocated reserves'}
               </div>
             </div>
-
-            <div className="bg-background/80 border border-border rounded-xl p-3">
-              <div className="text-[11px] font-medium text-gray-400 flex items-center gap-1 mb-1">
-                <span>Total Portfolio</span>
-              </div>
-              <div className="text-sm sm:text-base font-bold font-mono text-heading">
-                ${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="text-[10px] text-gray-500 mt-0.5">Holdings + Cash</div>
-            </div>
           </div>
+
+          {hasMixedCurrencies && (
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300">
+              <strong>Multi-Currency Portfolio Active:</strong> Holdings contain both USD ($) and Indian NSE (₹ INR) constituents. USD positions deduct from USD cash reserves, and INR positions are tracked natively in ₹ with automated currency isolation and consolidated reporting.
+            </div>
+          )}
 
           {/* Calm Inline Budget Summary & Auto-Fit Helper */}
           {exceedsBudget && (
@@ -307,7 +373,7 @@ export default function PortfolioCustomization({
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
                 <span className="truncate sm:whitespace-normal">
-                  Allocation exceeds available budget by <strong className="font-mono text-amber-400">${Math.abs(remainingCash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>. Reduce shares to stay within ${initialCapital.toLocaleString()}.
+                  Allocation exceeds available budget by <strong className="font-mono text-amber-400">{currSymbol}{Math.abs(remainingCash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>. Reduce shares to stay within {currSymbol}{effectiveBudget.toLocaleString()}.
                 </span>
               </div>
               <button
@@ -433,12 +499,15 @@ export default function PortfolioCustomization({
                             className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20"
                             title="Live market feed unavailable; deterministic reference price used"
                           >
-                            Ref $100.00
+                            Ref {stock.currencySymbol || '$'}{stock.price.toFixed(2)}
                           </span>
                         )}
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-background border border-border text-gray-400">
+                          {stock.currency || 'USD'}
+                        </span>
                       </div>
                       <div className="text-[11px] font-mono text-gray-400 mt-0.5">
-                        Price: ${stock.price.toFixed(2)}
+                        Price: {stock.currencySymbol || '$'}{stock.price.toFixed(2)}
                       </div>
                     </div>
                   </div>
@@ -461,14 +530,14 @@ export default function PortfolioCustomization({
                         />
                       </div>
                       {isInvalidQty && (
-                        <span className="text-[10px] text-danger mt-0.5">Whole shares $\ge 0$</span>
+                        <span className="text-[10px] text-danger mt-0.5">Whole shares &ge; 0</span>
                       )}
                     </div>
 
                     {/* Position Market Value & Allocation % */}
                     <div className="w-28 text-right">
                       <div className="text-xs font-mono font-bold text-heading">
-                        ${positionValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {stock.currencySymbol || '$'}{positionValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                       <div className="flex items-center justify-end gap-1 mt-0.5">
                         <span className="text-[10px] font-mono text-gray-400">

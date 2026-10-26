@@ -1,6 +1,7 @@
 import hashlib
 import os
 import sqlite3
+import json
 from datetime import datetime, timezone
 import pandas as pd
 
@@ -20,11 +21,16 @@ class SignalDatabase:
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        dirname = os.path.dirname(self.db_path)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+        self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False) if self.db_path == ":memory:" else None
         self._init_db()
 
     def _get_connection(self):
-        return sqlite3.connect(self.db_path)
+        if self._mem_conn is not None:
+            return self._mem_conn
+        return sqlite3.connect(self.db_path, check_same_thread=False)
 
     def _init_db(self):
         with self._get_connection() as conn:
@@ -133,7 +139,7 @@ class SignalDatabase:
                 """
             )
 
-            # Portfolio cash balance tracking table
+            # Portfolio cash balance tracking table (legacy single currency)
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS portfolio_cash (
@@ -143,20 +149,78 @@ class SignalDatabase:
                 """
             )
 
+            # Multi-currency cash balance tracking table
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS portfolio_cash_balances (
+                    currency TEXT PRIMARY KEY,
+                    balance REAL NOT NULL
+                )
+                """
+            )
+
+            # Auditable FX currency conversions table
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS fx_conversions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    from_currency TEXT NOT NULL,
+                    to_currency TEXT NOT NULL,
+                    from_amount REAL NOT NULL,
+                    to_amount REAL NOT NULL,
+                    rate REAL NOT NULL,
+                    source TEXT NOT NULL,
+                    is_live BOOLEAN NOT NULL,
+                    observation_time TEXT,
+                    notes TEXT
+                )
+                """
+            )
+
+            # Universe selection table for persistent stock selection
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS universe_selection (
+                    id INTEGER PRIMARY KEY,
+                    selected_ids TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+
+            # Cumulative executed fees table
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cumulative_fees (
+                    id INTEGER PRIMARY KEY,
+                    fees_usd REAL NOT NULL,
+                    fees_inr REAL NOT NULL
+                )
+                """
+            )
+
+            # Check if reporting_currency column exists in configuration table
+            cursor.execute("PRAGMA table_info(configuration)")
+            columns = [c[1] for c in cursor.fetchall()]
+            if "reporting_currency" not in columns:
+                cursor.execute("ALTER TABLE configuration ADD COLUMN reporting_currency TEXT DEFAULT 'INR'")
+
             conn.commit()
 
     def get_config(self) -> dict:
         """Fetches the persisted configuration if it exists."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT initial_capital, alpha_tilt, data_mode, max_items FROM configuration WHERE id = 1")
+            cursor.execute("SELECT initial_capital, alpha_tilt, data_mode, max_items, reporting_currency FROM configuration WHERE id = 1")
             row = cursor.fetchone()
             if row:
                 return {
                     "initial_capital": row[0],
                     "alpha_tilt": row[1],
                     "data_mode": row[2],
-                    "max_items": row[3]
+                    "max_items": row[3],
+                    "reporting_currency": row[4] if row[4] else None
                 }
             return None
 
@@ -167,16 +231,43 @@ class SignalDatabase:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO configuration 
-                (id, initial_capital, alpha_tilt, data_mode, max_items)
-                VALUES (1, ?, ?, ?, ?)
+                (id, initial_capital, alpha_tilt, data_mode, max_items, reporting_currency)
+                VALUES (1, ?, ?, ?, ?, ?)
                 """,
                 (
                     config_data["initial_capital"],
                     config_data["alpha_tilt"],
                     config_data["data_mode"],
-                    config_data["max_items"]
+                    config_data["max_items"],
+                    config_data.get("reporting_currency", None)
                 )
             )
+            conn.commit()
+
+    def save_reporting_currency(self, currency: str):
+        """Updates the reporting currency preference in the database."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE configuration SET reporting_currency = ? WHERE id = 1", (currency.upper(),))
+            conn.commit()
+
+    def get_cumulative_fees(self) -> dict:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT fees_usd, fees_inr FROM cumulative_fees WHERE id = 1")
+            row = cursor.fetchone()
+            if row:
+                return {"USD": float(row[0] or 0.0), "INR": float(row[1] or 0.0)}
+            return {"USD": 0.0, "INR": 0.0}
+
+    def save_cumulative_fees(self, fees: dict):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO cumulative_fees (id, fees_usd, fees_inr) VALUES (1, ?, ?)",
+                (float(fees.get("USD", 0.0)), float(fees.get("INR", 0.0)))
+            )
+            conn.commit()
             conn.commit()
 
     def get_holdings(self) -> dict:
@@ -188,32 +279,164 @@ class SignalDatabase:
             return {r[0]: r[1] for r in rows}
 
     def save_holdings(self, holdings: dict):
-        """Saves current portfolio holdings."""
+        """Saves current portfolio holdings, replacing any previous holdings."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("DELETE FROM holdings")
             for ticker, shares in holdings.items():
                 if shares is not None:
                     cursor.execute(
-                        "INSERT OR REPLACE INTO holdings (ticker, shares) VALUES (?, ?)",
+                        "INSERT INTO holdings (ticker, shares) VALUES (?, ?)",
                         (ticker, float(shares))
                     )
             conn.commit()
 
     def get_cash(self) -> float:
-        """Fetches the persisted cash balance if set."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT cash_balance FROM portfolio_cash WHERE id = 1")
-            row = cursor.fetchone()
-            return float(row[0]) if row is not None else None
+        """Fetches the persisted USD cash balance if set."""
+        balances = self.get_cash_balances()
+        return balances.get("USD", None)
 
     def save_cash(self, cash: float):
-        """Saves current cash balance."""
+        """Saves current USD cash balance and syncs balances table."""
+        balances = self.get_cash_balances()
+        balances["USD"] = float(cash)
+        self.save_cash_balances(balances)
+
+    def get_cash_balances(self) -> dict:
+        """Fetches all persisted currency cash balances as {currency: balance}."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT currency, balance FROM portfolio_cash_balances")
+            rows = cursor.fetchall()
+            if rows:
+                return {str(r[0]).upper(): float(r[1]) for r in rows}
+            
+            # Check legacy portfolio_cash
+            cursor.execute("SELECT cash_balance FROM portfolio_cash WHERE id = 1")
+            row = cursor.fetchone()
+            if row is not None:
+                legacy_val = float(row[0])
+                cursor.execute(
+                    "INSERT OR REPLACE INTO portfolio_cash_balances (currency, balance) VALUES ('USD', ?)",
+                    (legacy_val,)
+                )
+                conn.commit()
+                return {"USD": legacy_val, "INR": 0.0}
+            return {"USD": 0.0, "INR": 0.0}
+
+    def save_cash_balances(self, balances: dict):
+        """Persists separate currency cash balances and syncs legacy USD table."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for curr, bal in balances.items():
+                if bal is not None:
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO portfolio_cash_balances (currency, balance) VALUES (?, ?)",
+                        (str(curr).upper(), float(bal))
+                    )
+            usd_bal = balances.get("USD")
+            if usd_bal is not None:
+                cursor.execute(
+                    "INSERT OR REPLACE INTO portfolio_cash (id, cash_balance) VALUES (1, ?)",
+                    (float(usd_bal),)
+                )
+            conn.commit()
+
+    def log_fx_conversion(
+        self,
+        from_currency: str,
+        to_currency: str,
+        from_amount: float,
+        to_amount: float,
+        rate: float,
+        source: str,
+        is_live: bool,
+        observation_time: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> int:
+        """Logs an auditable currency conversion record."""
+        now_iso = datetime.now(timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT OR REPLACE INTO portfolio_cash (id, cash_balance) VALUES (1, ?)",
-                (float(cash),)
+                """
+                INSERT INTO fx_conversions 
+                (timestamp, from_currency, to_currency, from_amount, to_amount, rate, source, is_live, observation_time, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now_iso,
+                    str(from_currency).upper(),
+                    str(to_currency).upper(),
+                    float(from_amount),
+                    float(to_amount),
+                    float(rate),
+                    str(source),
+                    bool(is_live),
+                    str(observation_time) if observation_time else None,
+                    str(notes) if notes else None
+                )
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_fx_conversions(self, limit: int = 50) -> list:
+        """Fetches history of FX conversions."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, timestamp, from_currency, to_currency, from_amount, to_amount, rate, source, is_live, observation_time, notes
+                FROM fx_conversions
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,)
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "timestamp": r[1],
+                    "from_currency": r[2],
+                    "to_currency": r[3],
+                    "from_amount": r[4],
+                    "to_amount": r[5],
+                    "rate": r[6],
+                    "source": r[7],
+                    "is_live": bool(r[8]),
+                    "observation_time": r[9],
+                    "notes": r[10]
+                }
+                for r in rows
+            ]
+
+    def get_universe_selection(self) -> Optional[list]:
+        """Fetches persisted list of 10 instrument IDs if configured."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT selected_ids FROM universe_selection WHERE id = 1")
+            row = cursor.fetchone()
+            if row and row[0]:
+                try:
+                    data = json.loads(row[0])
+                    if isinstance(data, list):
+                        return data
+                except Exception:
+                    return None
+            return None
+
+    def save_universe_selection(self, selected_ids: list):
+        """Persists the 10 selected instrument IDs."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO universe_selection (id, selected_ids, updated_at)
+                VALUES (1, ?, ?)
+                """,
+                (json.dumps(list(selected_ids)), now_iso)
             )
             conn.commit()
 
@@ -335,6 +558,20 @@ class SignalDatabase:
                 ]
             )
             return df
+
+    def clear_scan_runtime_state(self):
+        """
+        Clears transient scan results (active signals, latest simulated orders, target weight history, 
+        and transient session deduplication cache) while strictly preserving user configuration 
+        and financial ledger records (holdings, cash balances, cumulative fees, and FX conversions).
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM risk_signals")
+            cursor.execute("DELETE FROM latest_orders")
+            cursor.execute("DELETE FROM target_weight_history")
+            cursor.execute("DELETE FROM documents")
+            conn.commit()
 
     def clear_runtime_data(self):
         """Clears all runtime signals and documents, preserving configuration."""

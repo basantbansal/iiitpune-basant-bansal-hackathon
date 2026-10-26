@@ -1,12 +1,27 @@
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from src.api.routes import router
+from src.api.dependencies import get_state
 
 load_dotenv()
 
-app = FastAPI(title="Institutional Risk Terminal API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Intentional application startup lifecycle:
+    state = get_state()
+    # Perform clean session startup (clears transient scan results, preserves ledger)
+    await state.initialize_clean_session()
+    # Non-blocking background price warm-up
+    asyncio.create_task(
+        asyncio.to_thread(state.rebalancer.price_provider.refresh_prices, state.rebalancer.tickers, 5)
+    )
+    yield
+
+app = FastAPI(title="Institutional Risk Terminal API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,17 +43,6 @@ async def add_no_cache_headers(request, call_next):
     return response
 
 app.include_router(router)
-
-import asyncio
-from src.api.dependencies import get_state
-
-@app.on_event("startup")
-async def startup_event():
-    state = get_state()
-    # Explicit initialization path for prices, non-blocking with timeout
-    asyncio.create_task(
-        asyncio.to_thread(state.rebalancer.price_provider.refresh_prices, state.rebalancer.tickers, 5)
-    )
 
 if __name__ == "__main__":
     import uvicorn

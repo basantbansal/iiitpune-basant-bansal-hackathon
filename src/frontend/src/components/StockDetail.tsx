@@ -67,6 +67,8 @@ export default function StockDetail() {
   const delta = details.delta_pp ?? Number(((details.current_weight - details.baseline_weight) * 100).toFixed(2));
   const isOverweight = delta > 0.05;
   const isUnderweight = delta < -0.05;
+  const symbol = details.currency_symbol || (details.currency === 'INR' ? '₹' : '$');
+  const isIndian = details.market === 'IN' || details.currency === 'INR';
   
   const signals = details.signals || [];
   const bullishSignals = signals.filter((s: any) => s.sentiment_score > 0.15);
@@ -91,33 +93,78 @@ export default function StockDetail() {
               <span>{ticker}</span>
               <span className="text-xl text-gray-400 font-normal">| {details.company_name || ticker}</span>
             </h1>
-            {details.action === 'BUY' && (
+            {details.order_qty > 0 && !details.execution_status?.startsWith('WITHHELD_') && details.action === 'BUY' && (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded text-xs font-bold bg-success/20 text-success border border-success/30 font-mono">
-                <TrendingUp size={14} /> + BUY {details.order_qty ? details.order_qty.toFixed(2) : ''} SHS
+                <TrendingUp size={14} /> + BUY {details.order_qty.toFixed(2)} SHS
               </span>
             )}
-            {details.action === 'SELL' && (
+            {details.order_qty > 0 && !details.execution_status?.startsWith('WITHHELD_') && details.action === 'SELL' && (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded text-xs font-bold bg-danger/20 text-danger border border-danger/30 font-mono">
-                <TrendingDown size={14} /> - SELL {details.order_qty ? details.order_qty.toFixed(2) : ''} SHS
+                <TrendingDown size={14} /> - SELL {details.order_qty.toFixed(2)} SHS
               </span>
             )}
-            {details.action === 'HOLD' && (
+            {details.execution_status?.startsWith('WITHHELD_') && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono" title={details.execution_status}>
+                <Minus size={14} /> WITHHELD ({details.execution_status.replace('WITHHELD_', '')})
+              </span>
+            )}
+            {(!details.execution_status?.startsWith('WITHHELD_') && (details.order_qty === 0 || !details.order_qty || details.action === 'HOLD')) && (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded text-xs font-medium bg-gray-800 text-gray-400 border border-gray-700 font-mono">
-                <Minus size={14} /> HOLD
+                <Minus size={14} /> HOLD (NO TRADE)
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5">
-            <Building size={14} /> Monitored Mega-Cap Constituent &bull; Automated NLP Event Sensitivity Active
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold font-mono ${
+              isIndian
+                ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+            }`}>
+              {isIndian ? '🇮🇳 India • NSE' : '🇺🇸 US • NASDAQ/NYSE'}
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded bg-background text-gray-300 border border-border font-mono">
+              {details.currency || (isIndian ? 'INR' : 'USD')} ({symbol})
+            </span>
+            {details.provider_symbol && details.provider_symbol !== ticker && (
+              <span className="text-xs px-2 py-0.5 rounded bg-background text-gray-400 border border-border font-mono">
+                Provider: {details.provider_symbol}
+              </span>
+            )}
+            <span className="text-xs text-gray-400 flex items-center gap-1.5 ml-1">
+              <Building size={13} /> Monitored Constituent &bull; NLP Event Sensitivity Active
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <div className="text-xs text-gray-400 uppercase tracking-wider">Latest Portfolio Price</div>
+            <div className="text-xs text-gray-400 uppercase tracking-wider">Latest Portfolio Price ({details.currency || (isIndian ? 'INR' : 'USD')})</div>
             <div className="text-2xl font-mono font-bold text-heading">
-              {details.price != null ? `$${details.price.toFixed(2)}` : <span className="text-gray-500 italic text-base">Unavailable</span>}
+              {details.price != null ? (
+                <span>
+                  {symbol}{details.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {isIndian && details.price_usd != null && (
+                    <span className="text-xs text-gray-400 font-normal block font-sans">
+                      (${details.price_usd.toFixed(2)} USD equiv)
+                    </span>
+                  )}
+                  {!isIndian && details.price_inr != null && (
+                    <span className="text-xs text-gray-400 font-normal block font-sans">
+                      (₹{details.price_inr.toFixed(2)} INR equiv)
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="text-gray-500 italic text-base">
+                  Ref {symbol}{Number(details.reference_price ?? (isIndian ? 1000 : 100)).toFixed(2)}
+                </span>
+              )}
             </div>
+            {details.price == null && (
+              <div className="text-[10px] text-amber-500/90 font-mono">
+                Fallback reference price (non-executable)
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -181,9 +228,9 @@ export default function StockDetail() {
         </div>
 
         <div className="bg-surface border border-border p-4 rounded-lg">
-          <div className="text-xs text-gray-400 uppercase tracking-wider">Active Trade Value</div>
+          <div className="text-xs text-gray-400 uppercase tracking-wider">Active Trade Value ({details.currency || (isIndian ? 'INR' : 'USD')})</div>
           <div className="text-xl font-mono font-bold text-heading mt-1">
-            ${details.trade_value != null ? details.trade_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+            {symbol}{details.trade_value != null ? details.trade_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
           </div>
           <div className="text-[11px] text-gray-400 mt-1">
             Action: <span className="font-semibold text-gray-300">{details.action}</span>
@@ -435,13 +482,18 @@ export default function StockDetail() {
         {history.length > 0 ? (
           <div className="space-y-6">
             <div className="bg-surface border border-border p-4 rounded-lg h-[400px]">
-              <h4 className="font-semibold mb-2 text-center text-sm text-gray-300">{ticker} Price & Moving Averages</h4>
+              <h4 className="font-semibold mb-2 text-center text-sm text-gray-300">
+                {ticker} Price ({details.currency || (isIndian ? 'INR' : 'USD')} {symbol}) & Moving Averages
+              </h4>
               <ResponsiveContainer width="100%" height="90%">
                 <ComposedChart data={history} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid stroke="#30363D" strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="date" stroke="#8B949E" minTickGap={30} tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="left" stroke="#8B949E" domain={['auto', 'auto']} tick={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#161B22', borderColor: '#30363D', color: '#C9D1D9' }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#161B22', borderColor: '#30363D', color: '#C9D1D9' }}
+                    formatter={(value: any) => [`${symbol}${Number(value).toFixed(2)}`, '']}
+                  />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line yAxisId="left" type="monotone" dataKey="close" name="Close Price" stroke="#C9D1D9" dot={false} strokeWidth={2} />
                   <Line yAxisId="left" type="monotone" dataKey="sma20" name="SMA 20" stroke="#f59e0b" dot={false} />

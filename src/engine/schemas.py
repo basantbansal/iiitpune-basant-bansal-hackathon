@@ -83,3 +83,51 @@ class BacktestEvent:
             raise ValueError("price_t0 must be finite and strictly positive")
         if self.price_t1 is None or math.isnan(self.price_t1) or math.isinf(self.price_t1) or self.price_t1 <= 0:
             raise ValueError("price_t1 must be finite and strictly positive")
+
+
+@dataclass(frozen=True)
+class Instrument:
+    id: str
+    name: str
+    display_ticker: str
+    market: str
+    exchange: str
+    provider_symbol: str
+    currency: str
+    sector: str
+    aliases: tuple = ()
+
+    VALID_MARKETS = frozenset({"US", "IN"})
+    VALID_CURRENCIES = frozenset({"USD", "INR"})
+    VALID_EXCHANGES = {
+        "US": frozenset({"NASDAQ", "NYSE"}),
+        "IN": frozenset({"NSE", "BSE"}),
+    }
+
+    def __post_init__(self):
+        if not self.id or not str(self.id).strip():
+            raise ValueError("Instrument id must be a non-empty string")
+        if not self.name or not str(self.name).strip():
+            raise ValueError("Instrument name must be a non-empty string")
+        if not self.display_ticker or not str(self.display_ticker).strip():
+            raise ValueError("Instrument display_ticker must be a non-empty string")
+        if self.market not in self.VALID_MARKETS:
+            raise ValueError(f"Invalid market '{self.market}'. Supported markets: {sorted(self.VALID_MARKETS)}")
+        valid_exch = self.VALID_EXCHANGES.get(self.market, frozenset())
+        if self.exchange not in valid_exch:
+            raise ValueError(f"Invalid exchange '{self.exchange}' for market '{self.market}'. Valid exchanges: {sorted(valid_exch)}")
+        if self.currency not in self.VALID_CURRENCIES:
+            raise ValueError(f"Invalid currency '{self.currency}'. Supported currencies: {sorted(self.VALID_CURRENCIES)}")
+        if not self.provider_symbol or not str(self.provider_symbol).strip():
+            raise ValueError("Instrument provider_symbol must be a non-empty string")
+        if not self.sector or not str(self.sector).strip():
+            raise ValueError("Instrument sector must be a non-empty string")
+        if isinstance(self.aliases, (list, set)):
+            object.__setattr__(self, "aliases", tuple(str(a) for a in self.aliases))
+        elif not isinstance(self.aliases, tuple):
+            raise ValueError("Instrument aliases must be a list, tuple, or set of strings")
+
+    def to_dict(self):
+        d = asdict(self)
+        d["aliases"] = list(self.aliases)
+        return d

@@ -22,11 +22,108 @@ class EntityResolver:
         "TSLA": {"canonical": "Tesla", "aliases": ["Tesla Inc", "Tesla Motors"]},
         "JPM": {"canonical": "JPMorgan Chase", "aliases": ["JPMorgan", "JP Morgan", "JPMorgan Chase & Co", "J.P. Morgan"]},
         "JNJ": {"canonical": "Johnson & Johnson", "aliases": ["J&J", "Johnson and Johnson"]},
-        "XOM": {"canonical": "ExxonMobil", "aliases": ["Exxon", "Exxon Mobil", "ExxonMobil Corp"]}
+        "XOM": {"canonical": "ExxonMobil", "aliases": ["Exxon", "Exxon Mobil", "ExxonMobil Corp"]},
+        "RELIANCE": {
+            "canonical": "Reliance Industries Limited",
+            "aliases": ["Reliance Industries", "RIL", "Reliance Retail", "Reliance Jio"],
+            "allow_standalone_alias": False,  # Bare 'Reliance' requires disambiguation
+            "negative_patterns": [
+                r"\bfirst\s+reliance\b",
+                r"\breliance\s+bancshares\b",
+                r"\breliance\s+steel\b",
+                r"\breliance\s+global\b",
+                r"\bbancshares\b",
+                r"\bsouth\s+carolina\b"
+            ],
+            "context_keywords": ["industries", "ril", "jio", "ambani", "refinery", "telecom", "retail", "oil-to-chemicals", "o2c", "petrochemicals", "nifty", "sensex", "nse", "bse", "india", "indian", "mumbai"]
+        },
+        "TCS": {
+            "canonical": "Tata Consultancy Services Limited",
+            "aliases": ["Tata Consultancy Services", "Tata Consultancy"],
+            "allow_standalone_alias": False,  # Bare 'TCS' requires disambiguation
+            "negative_patterns": [
+                r"\btelecommunication\s+systems\b",
+                r"\bus\s+government\s+contractor\b",
+                r"\bdefense\s+contractor\b",
+                r"\bus\s+army\b",
+                r"\bpentagon\b",
+                r"\btraction\s+control\b",
+                r"\btaxpayers\s+for\s+common\s+sense\b",
+                r"\bteacher\s+certification\b",
+                r"\btax\s+collected\s+at\s+source\b",
+                r"\btraffic\s+control\b",
+                r"\btrue\s+cost\s+of\s+solar\b"
+            ],
+            "context_keywords": ["tata", "consultancy", "it services", "software", "tech", "outsourcing", "deal", "cloud", "nifty", "sensex", "nse", "bse", "india", "indian", "shares", "share", "stock", "earnings", "profit", "revenue", "dividend", "quarter", "results", "q1", "q2", "q3", "q4"]
+        },
+        "HDFCBANK": {"canonical": "HDFC Bank Limited", "aliases": ["HDFC Bank", "HDFC Bank Ltd"]},
+        "INFY": {"canonical": "Infosys Limited", "aliases": ["Infosys", "Infosys Ltd", "Infy"]},
+        "ICICIBANK": {"canonical": "ICICI Bank Limited", "aliases": ["ICICI Bank", "ICICI Bank Ltd"]},
+        "HINDUNILVR": {"canonical": "Hindustan Unilever Limited", "aliases": ["Hindustan Unilever", "HUL", "Unilever India", "Hindustan Unilever Ltd"]},
+        "ITC": {
+            "canonical": "ITC Limited",
+            "aliases": ["ITC Limited", "ITC Ltd"],
+            "allow_standalone_alias": False,  # Bare 'ITC' requires disambiguation
+            "negative_patterns": [
+                r"\bus\s+itc\b",
+                r"\bu\.s\.\s+itc\b",
+                r"\binternational\s+trade\s+commission\b",
+                r"\bpatent\s+dispute\b",
+                r"\bpatent\s+investigation\b",
+                r"\bsection\s+337\b",
+                r"\bmicron\b",
+                r"\btrade\s+commission\b",
+                r"\binput\s+tax\s+credit\b",
+                r"\binvestment\s+tax\s+credit\b",
+                r"\bgst\s+council\b"
+            ],
+            "context_keywords": ["limited", "ltd", "fmcg", "cigarette", "cigarettes", "tobacco", "hotel", "hotels", "paperboards", "agri", "puri", "sanjiv", "nifty", "sensex", "nse", "bse", "india", "indian", "kolkata", "shares", "share", "stock", "earnings", "results", "profit", "dividend", "q1", "q2", "q3", "q4"]
+        },
+        "BHARTIARTL": {"canonical": "Bharti Airtel Limited", "aliases": ["Bharti Airtel", "Airtel", "Bharti Airtel Ltd"]},
+        "LT": {
+            "canonical": "Larsen & Toubro Limited",
+            "aliases": ["Larsen & Toubro", "L&T", "Larsen and Toubro", "Larsen Toubro"],
+            "allow_standalone_alias": False,  # Bare 'LT' requires disambiguation
+            "negative_patterns": [
+                r"\btaiwan\b",
+                r"\blt\s+technology\b",
+                r"\blt\s+corp\b",
+                r"\blieutenant\b",
+                r"\blt\.\b",
+                r"\blt\s+col\b",
+                r"\blt\s+gen\b",
+                r"\blt\s+debt\b",
+                r"\blong[- ]term\b",
+                r"\bdisplay\s+driver\b",
+                r"\blight\s+(?:and|&)\s+translucent\b"
+            ],
+            "context_keywords": ["larsen", "toubro", "l&t", "infrastructure", "construction", "engineering", "epc", "defense", "metro", "order", "orders", "subramanian", "nifty", "sensex", "nse", "bse", "india", "indian", "mumbai", "shares", "share", "stock", "earnings", "contract", "results", "profit", "revenue", "dividend", "q1", "q2", "q3", "q4"]
+        },
+        "SBIN": {"canonical": "State Bank of India", "aliases": ["State Bank of India", "SBI", "State Bank"]}
     }
 
     AMBIGUOUS_NAMES = {"Apple", "Amazon", "Meta"}
-    FINANCIAL_CONTEXT_WORDS = {"stock", "shares", "earnings", "revenue", "investor", "dividend", "nasdaq", "dow", "market", "inc", "corp", "ceo", "cfo", "quarter", "forecast", "production", "outlook"}
+    AMBIGUOUS_TICKERS = {"LT", "ITC", "TCS"}
+    GENERIC_HEADLINE_PATTERNS = [
+        r"\bstock\s+price\s+today\b",
+        r"\bshare\s+price\s+today\b",
+        r"\blive\s+bse\s*/\s*nse\s+updates\b",
+        r"\boptions\s+chain\s+analysis\b",
+        r"\bshare\s+price\s*:\s*technical\s+analysis\b",
+        r"\bstock\s+quote\b",
+        r"\bprice\s+target\s+and\s+consensus\b",
+        r"\bstock\s+price,\s*news,\s*quote\s+(?:and|&)\s+history\b",
+        r"\bstock\s+price\b.*\bquote\s+(?:and|&)\s+history\b",
+        r"\binteractive\s+stock\s+chart\b",
+        r"\bquote\s+(?:and|&)\s+history\b",
+        r"\bvaluation,\s*fundamentals\s+(?:and|&)\s+technicals\b"
+    ]
+    FINANCIAL_CONTEXT_WORDS = {
+        "stock", "shares", "earnings", "revenue", "investor", "dividend",
+        "nasdaq", "dow", "market", "inc", "corp", "ceo", "cfo", "quarter",
+        "forecast", "production", "outlook", "order", "contract", "profit",
+        "results", "nifty", "sensex", "nse", "bse"
+    }
 
     @classmethod
     def normalize_text(cls, text: str) -> str:
@@ -38,11 +135,20 @@ class EntityResolver:
         return text
 
     @classmethod
+    def is_generic_quote_page(cls, text: str) -> bool:
+        lower = text.lower()
+        return any(re.search(pat, lower) for pat in cls.GENERIC_HEADLINE_PATTERNS)
+
+    @classmethod
     def resolve_entities(cls, text: str) -> List[ResolvedEntity]:
         normalized = cls.normalize_text(text)
         lower_text = normalized.lower()
-        
-        has_financial_context = any(word in lower_text for word in cls.FINANCIAL_CONTEXT_WORDS)
+
+        # Reject generic stock price / quote pages
+        if cls.is_generic_quote_page(normalized):
+            return []
+
+        has_financial_context = any(re.search(r'\b' + re.escape(word) + r'\b', lower_text) for word in cls.FINANCIAL_CONTEXT_WORDS)
         
         resolved = []
         seen_tickers = set()
@@ -50,21 +156,21 @@ class EntityResolver:
         for ticker, data in cls.COMPANY_REGISTRY.items():
             if ticker in seen_tickers:
                 continue
-                
+
+            # Check negative patterns first
+            negative_pats = data.get("negative_patterns", [])
+            if any(re.search(pat, lower_text) for pat in negative_pats):
+                continue
+
+            # 1. Cashtag match (e.g. $AAPL, $RELIANCE, $TCS)
             cashtag_pattern = r'\B\$' + re.escape(ticker) + r'(?![a-zA-Z0-9-])'
             cashtag_match = re.search(cashtag_pattern, normalized, re.IGNORECASE)
-            ticker_pattern = r'(?<![a-zA-Z0-9-])' + re.escape(ticker) + r'(?![a-zA-Z0-9-])'
-            ticker_match = re.search(ticker_pattern, normalized) 
-            
             if cashtag_match:
                 resolved.append(ResolvedEntity(ticker, "Cashtag", 1.0, cashtag_match.group()))
                 seen_tickers.add(ticker)
                 continue
-            if ticker_match and ticker_match.group() == ticker:
-                resolved.append(ResolvedEntity(ticker, "Exact Ticker", 1.0, ticker_match.group()))
-                seen_tickers.add(ticker)
-                continue
 
+            # 2. Canonical Name match (e.g. "Reliance Industries Limited", "Tata Consultancy Services Limited")
             canonical = data["canonical"]
             canon_pattern = r'(?<![a-zA-Z0-9-])' + re.escape(canonical) + r'(?![a-zA-Z0-9-])'
             canon_match = re.search(canon_pattern, normalized, re.IGNORECASE)
@@ -72,20 +178,54 @@ class EntityResolver:
                 if canonical in cls.AMBIGUOUS_NAMES and not has_financial_context:
                     pass
                 else:
-                    resolved.append(ResolvedEntity(ticker, "Canonical Name", 0.9, canon_match.group()))
+                    resolved.append(ResolvedEntity(ticker, "Canonical Name", 0.95, canon_match.group()))
                     seen_tickers.add(ticker)
                     continue
 
-            for alias in data["aliases"]:
+            # 3. Aliases match (e.g. "Reliance Industries", "Tata Consultancy Services", "L&T", "Larsen & Toubro")
+            matched_alias = False
+            for alias in data.get("aliases", []):
                 alias_pattern = r'(?<![a-zA-Z0-9-])' + re.escape(alias) + r'(?![a-zA-Z0-9-])'
                 alias_match = re.search(alias_pattern, normalized, re.IGNORECASE)
                 if alias_match:
                     if alias in cls.AMBIGUOUS_NAMES and not has_financial_context:
                         pass
                     else:
-                        resolved.append(ResolvedEntity(ticker, "Alias", 0.85, alias_match.group()))
+                        resolved.append(ResolvedEntity(ticker, "Alias", 0.90, alias_match.group()))
                         seen_tickers.add(ticker)
+                        matched_alias = True
                         break
+            if matched_alias:
+                continue
+
+            # 4. Bare Ticker symbol match
+            # If ticker is in AMBIGUOUS_TICKERS (LT, ITC, TCS), require disambiguating context keywords
+            ticker_pattern = r'(?<![a-zA-Z0-9-])' + re.escape(ticker) + r'(?![a-zA-Z0-9-])'
+            ticker_match = re.search(ticker_pattern, normalized)
+            if ticker_match and ticker_match.group() == ticker:
+                if ticker in cls.AMBIGUOUS_TICKERS:
+                    context_words = data.get("context_keywords", [])
+                    has_company_context = any(re.search(r'\b' + re.escape(word) + r'\b', lower_text) for word in context_words)
+                    if has_company_context:
+                        resolved.append(ResolvedEntity(ticker, "Disambiguated Ticker", 0.85, ticker_match.group()))
+                        seen_tickers.add(ticker)
+                        continue
+                else:
+                    resolved.append(ResolvedEntity(ticker, "Exact Ticker", 1.0, ticker_match.group()))
+                    seen_tickers.add(ticker)
+                    continue
+
+            # 5. Bare standalone alias (e.g. 'Reliance' without 'Industries')
+            if data.get("allow_standalone_alias", True) is False:
+                # If ticker has 'Reliance' in text, check if context supports Reliance Industries
+                if ticker == "RELIANCE":
+                    rel_match = re.search(r'(?<![a-zA-Z0-9-])Reliance(?![a-zA-Z0-9-])', normalized, re.IGNORECASE)
+                    if rel_match:
+                        context_words = data.get("context_keywords", [])
+                        if any(re.search(r'\b' + re.escape(w) + r'\b', lower_text) for w in context_words):
+                            resolved.append(ResolvedEntity(ticker, "Disambiguated Alias", 0.85, rel_match.group()))
+                            seen_tickers.add(ticker)
+                            continue
 
         return resolved
 

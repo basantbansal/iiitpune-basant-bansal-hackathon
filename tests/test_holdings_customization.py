@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
@@ -197,7 +198,7 @@ def test_subsequent_rebalance_after_holdings_update(isolated_db, mock_prices):
         mock_news.return_value = [{
             "headline": "Apple AAPL announces massive earnings beat and guidance increase",
             "source": "News",
-            "published_at": "2026-10-13T10:00:00Z"
+            "published_at": datetime.now(timezone.utc).isoformat()
         }]
 
         class MockSig:
@@ -337,7 +338,7 @@ def test_full_lifecycle_save_refresh_reset_rescan(isolated_db, mock_prices):
         mock_news.return_value = [{
             "headline": "NVIDIA NVDA unveils groundbreaking next-gen Blackwell AI superchip",
             "source": "News",
-            "published_at": "2026-10-13T12:00:00Z"
+            "published_at": datetime.now(timezone.utc).isoformat()
         }]
 
         class MockSig:

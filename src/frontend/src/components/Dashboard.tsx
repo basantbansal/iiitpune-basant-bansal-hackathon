@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
+import { formatCurrency } from '../utils/formatters';
 import Sidebar from './Sidebar';
 import Portfolio from './Portfolio';
 import RiskSignals from './RiskSignals';
 import StressTest from './StressTest';
 import PortfolioCustomization from './PortfolioCustomization';
+import StockUniverseSelector from './StockUniverseSelector';
 import {
   RotateCcw,
   PanelLeftClose,
@@ -12,7 +14,8 @@ import {
   Sliders,
   Sparkles,
   X,
-  Clock
+  Clock,
+  Globe
 } from 'lucide-react';
 
 const ONBOARDING_STORAGE_KEY = 'portfolio_first_visit_completed';
@@ -41,6 +44,9 @@ export default function Dashboard() {
 
   // 2. Portfolio Customization Drawer State
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
+
+  // 3. Stock Universe Selector Modal State
+  const [isUniverseSelectorOpen, setIsUniverseSelectorOpen] = useState(false);
 
   // 3. Compact First-Visit Guide State
   const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
@@ -85,6 +91,8 @@ export default function Dashboard() {
   }, []);
 
   const handleConfigChange = () => {
+    setScanResult(null);
+    setScanDuration(null);
     loadData();
     setScanCount(c => c + 1);
   };
@@ -138,11 +146,24 @@ export default function Dashboard() {
     }
   };
 
-  const lastScanLabel = metrics?.last_updated && metrics.last_updated !== 'Never'
-    ? `Last scan: ${metrics.last_updated}${metrics.last_scan_duration ? ` (${metrics.last_scan_duration}s)` : (scanDuration ? ` (${scanDuration}s)` : '')}`
+  const repCurr = (metrics?.reporting_currency || 'INR').toUpperCase();
+  const repSymbol = metrics?.reporting_currency_symbol || (repCurr === 'INR' ? '₹' : '$');
+
+  const handleCurrencyToggle = async (curr: 'INR' | 'USD') => {
+    try {
+      await api.setReportingCurrency(curr);
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const isPreScan = !metrics?.last_updated || metrics.last_updated === 'Never' || metrics.last_updated.toLowerCase().includes('no scan');
+  const lastScanLabel = !isPreScan
+    ? `Last scan: ${metrics?.last_updated}${metrics?.last_scan_duration ? ` (${metrics.last_scan_duration}s)` : (scanDuration ? ` (${scanDuration}s)` : '')}`
     : 'No market scan executed yet (initial baseline state)';
 
-  const initialCap = metrics?.initial_capital ?? 1000000;
+  const initialCap = metrics?.initial_capital ?? (repCurr === 'INR' ? 84000000 : 1000000);
   const holdingsVal = metrics?.holdings_market_value;
   const cashBal = metrics?.cash_balance;
   const totalVal = metrics?.total_value;
@@ -162,6 +183,7 @@ export default function Dashboard() {
         }}
         onConfigChange={handleConfigChange}
         onOpenCustomizer={() => setIsCustomizerOpen(true)}
+        onOpenUniverseSelector={() => setIsUniverseSelectorOpen(true)}
       />
 
       {/* Main Content Area - Expands to 100% width when sidebar is collapsed */}
@@ -190,6 +212,45 @@ export default function Dashboard() {
             >
               {isSidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
               <span>{isSidebarOpen ? "Collapse Controls" : "System Controls"}</span>
+            </button>
+
+            {/* Reporting Currency Switcher */}
+            <div className="flex items-center bg-background border border-border rounded-lg p-0.5 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => handleCurrencyToggle('INR')}
+                className={`px-2.5 py-1 rounded-md transition-colors font-mono ${
+                  repCurr === 'INR'
+                    ? 'bg-primary text-white shadow-xs font-bold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="Switch default reporting currency to Indian Rupee (₹ INR)"
+              >
+                ₹ INR
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCurrencyToggle('USD')}
+                className={`px-2.5 py-1 rounded-md transition-colors font-mono ${
+                  repCurr === 'USD'
+                    ? 'bg-primary text-white shadow-xs font-bold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="Switch default reporting currency to US Dollar ($ USD)"
+              >
+                $ USD
+              </button>
+            </div>
+
+            {/* Select Stock Universe */}
+            <button
+              type="button"
+              onClick={() => setIsUniverseSelectorOpen(true)}
+              className="flex items-center gap-2 bg-background hover:bg-border/60 border border-border px-3.5 py-1.5 rounded-lg font-semibold text-xs text-gray-200 hover:text-white transition-all shadow-xs"
+              title="Select 10 stocks from the 20-stock US and Indian catalog universe"
+            >
+              <Globe size={14} className="text-primary" />
+              <span>Stock Universe (10 / 20)</span>
             </button>
 
             {/* Customize Portfolio Holdings */}
@@ -263,28 +324,85 @@ export default function Dashboard() {
         {/* Financial Accounting Top Metrics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
           <MetricCard
-            title="Portfolio Total Value"
-            value={totalVal != null ? `$${totalVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : (metrics ? 'Market Feed Pending' : '...')}
-            subtitle={`Starting Budget: $${initialCap.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
-            footnote="Total Value = Invested Market Value + Available Cash Balance"
+            title={`Consolidated NAV (${repCurr})`}
+            value={
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>
+                  {totalVal != null 
+                    ? formatCurrency(totalVal, repCurr) 
+                    : (repCurr === 'INR' && metrics?.indicative_nav_inr != null
+                      ? formatCurrency(metrics.indicative_nav_inr, 'INR')
+                      : (metrics?.indicative_nav_usd != null 
+                        ? formatCurrency(metrics.indicative_nav_usd, 'USD') 
+                        : 'Unavailable'))}
+                </span>
+                {metrics?.nav_status === 'LIVE' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold font-mono">
+                    LIVE
+                  </span>
+                )}
+                {metrics?.nav_status === 'INDICATIVE_FALLBACK' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold font-mono" title={metrics?.nav_unavailability_reason || 'Indicative fallback prices'}>
+                    INDICATIVE
+                  </span>
+                )}
+                {metrics?.nav_status === 'UNAVAILABLE' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold font-mono" title={metrics?.nav_unavailability_reason || 'Missing market data'}>
+                    UNAVAILABLE
+                  </span>
+                )}
+              </div>
+            }
+            subtitle={`Reporting: ${repCurr} (${repSymbol}) • Initial Capital: ${formatCurrency(initialCap, repCurr)}`}
+            footnote={
+              totalVal != null 
+                ? `NAV = Cash (${repCurr}) + Invested Holdings (${repCurr})` 
+                : (metrics?.nav_unavailability_reason ? `Reason: ${metrics.nav_unavailability_reason}` : "Consolidated multi-currency valuation (USD/INR)")
+            }
           />
           <MetricCard
             title="Invested Market Value"
-            value={holdingsVal != null ? `$${holdingsVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : (metrics ? 'Pending Price Feed' : '...')}
-            subtitle="Equity holdings across 10 active constituents"
-            footnote={holdingsVal != null && initialCap > 0 ? `${((holdingsVal / initialCap) * 100).toFixed(1)}% deployed • Default 10 shares/stock leaves cash reserve uninvested` : '10 shares/stock default allocation'}
+            value={
+              holdingsVal != null ? (
+                formatCurrency(holdingsVal, repCurr)
+              ) : metrics?.indicative_holdings_value != null ? (
+                <div className="flex items-center gap-2">
+                  <span>{formatCurrency(metrics.indicative_holdings_value, repCurr)}</span>
+                  <span className="text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                    INDICATIVE
+                  </span>
+                </div>
+              ) : (
+                <span className="text-muted-foreground text-sm font-normal">Valuation Pending</span>
+              )
+            }
+            subtitle={
+              metrics?.holdings_market_value_inr > 0 && metrics?.holdings_market_value_usd > 0
+                ? `INR: ${formatCurrency(metrics?.holdings_market_value_inr, 'INR')} • USD: ${formatCurrency(metrics?.holdings_market_value_usd, 'USD')}`
+                : (metrics?.holdings_market_value_inr > 0 
+                  ? `INR: ${formatCurrency(metrics?.holdings_market_value_inr, 'INR')} (NSE Quotes)` 
+                  : `USD: ${formatCurrency(metrics?.holdings_market_value_usd, 'USD')} (US Quotes)`)
+            }
+            footnote={`FX Rate: 1 USD = ${metrics?.fx_rate ?? 84.00} INR • Source: ${metrics?.fx_rate_source || 'Verified Rate'}`}
           />
           <MetricCard
-            title="Available Cash Balance"
-            value={cashBal != null ? `$${cashBal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : (metrics ? `$${initialCap.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '...')}
-            subtitle={`Transaction fees: $${(metrics?.cumulative_fees_paid ?? metrics?.est_txn_cost ?? 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
-            footnote="Unallocated cash reserve available for rebalancing"
+            title="Available Cash Balances"
+            value={
+              <div className="flex flex-col text-sm sm:text-base font-bold font-mono">
+                <span>{formatCurrency(cashBal, repCurr)} ({repCurr})</span>
+                <span className="text-xs text-amber-400 font-normal">
+                  USD: {formatCurrency(metrics?.cash_usd, 'USD')} • INR: {formatCurrency(metrics?.cash_inr, 'INR')}
+                </span>
+              </div>
+            }
+            subtitle={`Trading Fees: ${formatCurrency(metrics?.cumulative_fees_paid ?? metrics?.est_txn_cost ?? 0, repCurr)}`}
+            footnote="Strict currency isolation: orders draw strictly from currency-specific cash"
           />
           <MetricCard
             title="Gross Traded Volume & Turnover"
-            value={metrics ? `$${(metrics?.gross_turnover ?? metrics?.total_turnover ?? 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '...'}
-            subtitle={metrics ? `One-Way: $${(metrics?.one_way_turnover ?? 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${(metrics?.one_way_turnover_pct ?? 0).toFixed(2)}%)` : 'One-Way: $0.00'}
-            footnote="Simulated execution at 10 bps transaction fee rate"
+            value={metrics ? formatCurrency(metrics?.gross_turnover ?? metrics?.total_turnover ?? 0, repCurr) : '...'}
+            subtitle={metrics ? `One-Way: ${formatCurrency(metrics?.one_way_turnover ?? 0, repCurr)} (${(metrics?.one_way_turnover_pct ?? 0).toFixed(2)}%)` : `One-Way: ${formatCurrency(0, repCurr)}`}
+            footnote="Simulated execution at 10 bps transaction fee rate in native currency"
           />
         </div>
 
@@ -326,11 +444,20 @@ export default function Dashboard() {
           onHoldingsUpdated={handleHoldingsUpdated}
         />
       )}
+
+      {/* 3. Stock Universe Selection Modal */}
+      {isUniverseSelectorOpen && (
+        <StockUniverseSelector
+          isOpen={true}
+          onClose={() => setIsUniverseSelectorOpen(false)}
+          onUniverseUpdated={handleConfigChange}
+        />
+      )}
     </div>
   );
 }
 
-function MetricCard({ title, value, subtitle, footnote }: { title: string, value: string, subtitle?: string, footnote?: string }) {
+function MetricCard({ title, value, subtitle, footnote }: { title: string, value: React.ReactNode, subtitle?: string, footnote?: string }) {
   return (
     <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between shadow-xs">
       <div>

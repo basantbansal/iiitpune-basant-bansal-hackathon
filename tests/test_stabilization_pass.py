@@ -420,9 +420,11 @@ def test_priority1_apple_negative_news_reduces_apple_weight(monkeypatch, tmp_pat
     db = SignalDatabase(str(db_path))
     fixed_prices = {t: 100.0 for t in ["AAPL", "MSFT", "GOOGL", "META", "AMZN", "NVDA", "TSLA", "JPM", "JNJ", "XOM"]}
 
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
     controlled_news = [
-        {"ticker": "AAPL", "headline": "Apple stock falls on report that company is cutting component orders on soft iPhone 18 Pro demand", "source": "Reuters", "published_at": "2026-10-11T12:00:00Z"},
-        {"ticker": "NVDA", "headline": "Nvidia unveils breakthrough quantum chip with surge in revenue", "source": "Bloomberg", "published_at": "2026-10-11T12:01:00Z"}
+        {"ticker": "AAPL", "headline": "Apple stock falls on report that company is cutting component orders on soft iPhone 18 Pro demand", "source": "Reuters", "published_at": now_iso},
+        {"ticker": "NVDA", "headline": "Nvidia unveils breakthrough quantum chip with surge in revenue", "source": "Bloomberg", "published_at": now_iso}
     ]
 
     with patch("src.api.dependencies.SignalDatabase", lambda: db):

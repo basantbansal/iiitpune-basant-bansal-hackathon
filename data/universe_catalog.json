@@ -1,0 +1,226 @@
+{
+  "version": "1.0",
+  "description": "Curated 20-stock universe (10 US S&P 500 / NASDAQ-100 and 10 Indian NSE Nifty constituents)",
+  "instruments": [
+    {
+      "id": "US_AAPL",
+      "name": "Apple Inc.",
+      "display_ticker": "AAPL",
+      "market": "US",
+      "exchange": "NASDAQ",
+      "provider_symbol": "AAPL",
+      "currency": "USD",
+      "sector": "Technology",
+      "aliases": ["Apple", "Apple Inc", "Apple Corp"]
+    },
+    {
+      "id": "US_MSFT",
+      "name": "Microsoft Corporation",
+      "display_ticker": "MSFT",
+      "market": "US",
+      "exchange": "NASDAQ",
+      "provider_symbol": "MSFT",
+      "currency": "USD",
+      "sector": "Technology",
+      "aliases": ["Microsoft", "Microsoft Corp", "Microsoft Corporation"]
+    },
+    {
+      "id": "US_NVDA",
+      "name": "NVIDIA Corporation",
+      "display_ticker": "NVDA",
+      "market": "US",
+      "exchange": "NASDAQ",
+      "provider_symbol": "NVDA",
+      "currency": "USD",
+      "sector": "Semiconductors",
+      "aliases": ["Nvidia", "NVIDIA Corp", "NVIDIA Corporation"]
+    },
+    {
+      "id": "US_AMZN",
+      "name": "Amazon.com Inc.",
+      "display_ticker": "AMZN",
+      "market": "US",
+      "exchange": "NASDAQ",
+      "provider_symbol": "AMZN",
+      "currency": "USD",
+      "sector": "Consumer Discretionary",
+      "aliases": ["Amazon", "Amazon.com", "Amazon Inc"]
+    },
+    {
+      "id": "US_GOOGL",
+      "name": "Alphabet Inc.",
+      "display_ticker": "GOOGL",
+      "market": "US",
+      "exchange": "NASDAQ",
+      "provider_symbol": "GOOGL",
+      "currency": "USD",
+      "sector": "Communication",
+      "aliases": ["Alphabet", "Google", "Alphabet Inc", "Google LLC"]
+    },
+    {
+      "id": "US_META",
+      "name": "Meta Platforms Inc.",
+      "display_ticker": "META",
+      "market": "US",
+      "exchange": "NASDAQ",
+      "provider_symbol": "META",
+      "currency": "USD",
+      "sector": "Communication",
+      "aliases": ["Meta", "Facebook", "Meta Platforms", "Meta Platforms Inc"]
+    },
+    {
+      "id": "US_TSLA",
+      "name": "Tesla Inc.",
+      "display_ticker": "TSLA",
+      "market": "US",
+      "exchange": "NASDAQ",
+      "provider_symbol": "TSLA",
+      "currency": "USD",
+      "sector": "Consumer Discretionary",
+      "aliases": ["Tesla", "Tesla Inc", "Tesla Motors"]
+    },
+    {
+      "id": "US_JPM",
+      "name": "JPMorgan Chase & Co.",
+      "display_ticker": "JPM",
+      "market": "US",
+      "exchange": "NYSE",
+      "provider_symbol": "JPM",
+      "currency": "USD",
+      "sector": "Financials",
+      "aliases": ["JPMorgan", "JP Morgan", "JPMorgan Chase", "JPMorgan Chase & Co", "J.P. Morgan"]
+    },
+    {
+      "id": "US_JNJ",
+      "name": "Johnson & Johnson",
+      "display_ticker": "JNJ",
+      "market": "US",
+      "exchange": "NYSE",
+      "provider_symbol": "JNJ",
+      "currency": "USD",
+      "sector": "Healthcare",
+      "aliases": ["Johnson & Johnson", "J&J", "Johnson and Johnson"]
+    },
+    {
+      "id": "US_XOM",
+      "name": "Exxon Mobil Corporation",
+      "display_ticker": "XOM",
+      "market": "US",
+      "exchange": "NYSE",
+      "provider_symbol": "XOM",
+      "currency": "USD",
+      "sector": "Energy",
+      "aliases": ["Exxon", "Exxon Mobil", "ExxonMobil", "ExxonMobil Corp"]
+    },
+    {
+      "id": "IN_RELIANCE",
+      "name": "Reliance Industries Limited",
+      "display_ticker": "RELIANCE",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "RELIANCE.NS",
+      "currency": "INR",
+      "sector": "Energy",
+      "aliases": ["Reliance", "Reliance Industries", "RIL", "Jio"]
+    },
+    {
+      "id": "IN_TCS",
+      "name": "Tata Consultancy Services Limited",
+      "display_ticker": "TCS",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "TCS.NS",
+      "currency": "INR",
+      "sector": "Information Technology",
+      "aliases": ["TCS", "Tata Consultancy Services", "Tata Consultancy"]
+    },
+    {
+      "id": "IN_HDFCBANK",
+      "name": "HDFC Bank Limited",
+      "display_ticker": "HDFCBANK",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "HDFCBANK.NS",
+      "currency": "INR",
+      "sector": "Financials",
+      "aliases": ["HDFC Bank", "HDFC", "HDFC Bank Ltd"]
+    },
+    {
+      "id": "IN_INFY",
+      "name": "Infosys Limited",
+      "display_ticker": "INFY",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "INFY.NS",
+      "currency": "INR",
+      "sector": "Information Technology",
+      "aliases": ["Infosys", "Infosys Ltd", "Infy"]
+    },
+    {
+      "id": "IN_ICICIBANK",
+      "name": "ICICI Bank Limited",
+      "display_ticker": "ICICIBANK",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "ICICIBANK.NS",
+      "currency": "INR",
+      "sector": "Financials",
+      "aliases": ["ICICI Bank", "ICICI", "ICICI Bank Ltd"]
+    },
+    {
+      "id": "IN_HINDUNILVR",
+      "name": "Hindustan Unilever Limited",
+      "display_ticker": "HINDUNILVR",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "HINDUNILVR.NS",
+      "currency": "INR",
+      "sector": "Consumer Staples",
+      "aliases": ["Hindustan Unilever", "HUL", "Unilever India"]
+    },
+    {
+      "id": "IN_ITC",
+      "name": "ITC Limited",
+      "display_ticker": "ITC",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "ITC.NS",
+      "currency": "INR",
+      "sector": "Consumer Staples",
+      "aliases": ["ITC", "ITC Limited", "ITC Ltd"]
+    },
+    {
+      "id": "IN_BHARTIARTL",
+      "name": "Bharti Airtel Limited",
+      "display_ticker": "BHARTIARTL",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "BHARTIARTL.NS",
+      "currency": "INR",
+      "sector": "Telecommunications",
+      "aliases": ["Bharti Airtel", "Airtel", "Bharti"]
+    },
+    {
+      "id": "IN_LT",
+      "name": "Larsen & Toubro Limited",
+      "display_ticker": "LT",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "LT.NS",
+      "currency": "INR",
+      "sector": "Industrials",
+      "aliases": ["Larsen & Toubro", "L&T", "Larsen and Toubro"]
+    },
+    {
+      "id": "IN_SBIN",
+      "name": "State Bank of India",
+      "display_ticker": "SBIN",
+      "market": "IN",
+      "exchange": "NSE",
+      "provider_symbol": "SBIN.NS",
+      "currency": "INR",
+      "sector": "Financials",
+      "aliases": ["State Bank of India", "SBI", "State Bank"]
+    }
+  ]
+}

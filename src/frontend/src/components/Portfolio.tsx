@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Sliders, RefreshCw } from 'lucide-react';
+import { ExternalLink, Sliders, RefreshCw, Sparkles, ChevronDown, ChevronUp, Newspaper } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
+import { getExecutionStatusInfo } from '../utils/formatters';
 import HumanExpertReview from './HumanExpertReview';
 
 interface PortfolioProps {
@@ -115,6 +116,46 @@ const CustomHistoryTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+const getCoverageStateBadge = (state: string) => {
+  switch (state) {
+    case 'FRESH_NEWS_FOUND':
+      return {
+        label: 'Fresh News Found',
+        badgeClass: 'bg-success/20 text-success border-success/30'
+      };
+    case 'NEUTRAL_SIGNALS_ONLY':
+      return {
+        label: 'Neutral Signals Only',
+        badgeClass: 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+      };
+    case 'ARTICLES_REJECTED_AS_STALE':
+      return {
+        label: 'Rejected Stale (>72h)',
+        badgeClass: 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+      };
+    case 'ARTICLES_REJECTED_AS_IRRELEVANT':
+      return {
+        label: 'Filtered SEO / 13F',
+        badgeClass: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+      };
+    case 'NO_NEWS_RETRIEVED':
+      return {
+        label: 'No News Retrieved',
+        badgeClass: 'bg-gray-800 text-gray-400 border-gray-700'
+      };
+    case 'NO_RELEVANT_FRESH_ARTICLES':
+      return {
+        label: 'No Fresh Articles',
+        badgeClass: 'bg-gray-800 text-gray-400 border-gray-700'
+      };
+    default:
+      return {
+        label: state ? state.replace(/_/g, ' ') : 'Pending Scan',
+        badgeClass: 'bg-slate-800 text-slate-400 border-slate-700'
+      };
+  }
+};
+
 export default function Portfolio({
   metrics,
   refreshTrigger,
@@ -127,6 +168,8 @@ export default function Portfolio({
 }: PortfolioProps) {
   const [portfolio, setPortfolio] = useState<any[]>([]);
   const [historyData, setHistoryData] = useState<any[]>([]);
+  const [coverageData, setCoverageData] = useState<any[]>([]);
+  const [isCoverageOpen, setIsCoverageOpen] = useState<boolean>(true);
   const [isFetching, setIsFetching] = useState<boolean>(false);
   const navigate = useNavigate();
 
@@ -135,12 +178,20 @@ export default function Portfolio({
     setIsFetching(true);
     Promise.all([
       api.getPortfolio(),
-      api.getPortfolioHistory().catch(() => [])
+      api.getPortfolioHistory().catch(() => []),
+      api.getMarketScanCoverage().catch(() => null)
     ])
-      .then(([portData, histData]) => {
+      .then(([portData, histData, covResp]) => {
         if (!isCancelled) {
           setPortfolio(portData || []);
           setHistoryData(histData || []);
+          if (covResp?.coverage && Array.isArray(covResp.coverage)) {
+            setCoverageData(covResp.coverage);
+          } else if (metrics?.constituent_coverage) {
+            setCoverageData(Object.values(metrics.constituent_coverage));
+          } else if (covResp && typeof covResp === 'object' && !Array.isArray(covResp)) {
+            setCoverageData(Object.values(covResp));
+          }
         }
       })
       .catch(console.error)
@@ -154,6 +205,12 @@ export default function Portfolio({
       isCancelled = true;
     };
   }, [metrics, refreshTrigger]);
+
+  useEffect(() => {
+    if (metrics?.constituent_coverage) {
+      setCoverageData(Object.values(metrics.constituent_coverage));
+    }
+  }, [metrics?.constituent_coverage]);
 
   const chartData = portfolio.map(item => {
     const tgt = Number(((item.target_weight ?? item.baseline_weight ?? 0.10) * 100).toFixed(2));
@@ -194,11 +251,16 @@ export default function Portfolio({
     );
   };
 
-  const formatCurrency = (val: number | null | undefined) => {
+  const formatMoney = (val: number | null | undefined, symbol: string = '$') => {
     if (val == null) return '—';
     const abs = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return val < 0 ? `-$${abs}` : `$${abs}`;
+    return val < 0 ? `-${symbol}${abs}` : `${symbol}${abs}`;
   };
+
+  const hasIndianConstituents = portfolio.some(p => p.market === 'IN' || p.currency === 'INR');
+  const hasUsConstituents = portfolio.some(p => p.market === 'US' || p.currency === 'USD' || !p.currency);
+  const hasMixedMarkets = hasIndianConstituents && hasUsConstituents;
+  const isIndiaOnly = hasIndianConstituents && !hasUsConstituents;
 
   return (
     <div className="space-y-6">
@@ -215,7 +277,7 @@ export default function Portfolio({
         </div>
         <div className="shrink-0 flex items-center gap-2">
           <span className="text-[11px] font-mono text-gray-400 bg-background px-2.5 py-1 rounded-md border border-border">
-            Top 10 S&P Universe • ±5.0 pp Limits
+            10 Monitored Constituents • ±5.0 pp Limits
           </span>
           {onOpenCustomizer && (
             <button
@@ -260,14 +322,17 @@ export default function Portfolio({
         {scanResult && (
           <div className="text-xs sm:text-sm text-gray-300 flex-1 bg-background/50 p-2.5 rounded-lg border border-border/50">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold text-heading">{scanResult.message}</span>
+              <span className="font-semibold text-heading flex items-center gap-1.5">
+                <Sparkles size={14} className="text-primary shrink-0" />
+                <span>{scanResult.message}</span>
+              </span>
               {scanDuration !== null && scanDuration !== undefined && (
                 <span className="text-xs text-primary font-mono bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
                   ⏱️ {scanDuration}s
                 </span>
               )}
             </div>
-            {(scanResult.stats_duplicates !== undefined || scanResult.stats_already_processed !== undefined) && (
+            {(scanResult.stats_duplicates !== undefined || scanResult.stats_already_processed !== undefined || scanResult.stats_target_changes !== undefined) && (
               <div className="text-xs text-gray-400 mt-1 flex flex-wrap gap-2.5">
                 <span>Retrieved: <strong className="text-gray-300">{scanResult.stats_retrieved ?? 0}</strong></span>
                 <span>•</span>
@@ -281,9 +346,31 @@ export default function Portfolio({
                 <span>•</span>
                 <span>Assignments: <strong className="text-gray-300">{scanResult.stats_ticker_assignments ?? 0}</strong></span>
                 <span>•</span>
-                <span>New Signals: <strong className="text-gray-300">{scanResult.stats_new_signals ?? scanResult.new_signals?.length ?? 0}</strong></span>
-                <span>•</span>
-                <span>Duplicates: <strong className="text-gray-300">{scanResult.stats_duplicates ?? 0}</strong></span>
+                <span>Signals: <strong className="text-primary font-bold">{scanResult.stats_new_signals ?? scanResult.new_signals?.length ?? 0}</strong></span>
+                {scanResult.stats_target_changes !== undefined && (
+                  <>
+                    <span>•</span>
+                    <span>Target Changes: <strong className="text-purple-400 font-bold">{scanResult.stats_target_changes}</strong></span>
+                  </>
+                )}
+                {scanResult.stats_executed_orders !== undefined && (
+                  <>
+                    <span>•</span>
+                    <span>Executed: <strong className="text-emerald-400 font-bold">{scanResult.stats_executed_orders}</strong></span>
+                  </>
+                )}
+                {scanResult.stats_withheld_orders !== undefined && (
+                  <>
+                    <span>•</span>
+                    <span>Withheld: <strong className="text-amber-400 font-bold">{scanResult.stats_withheld_orders}</strong></span>
+                  </>
+                )}
+                {scanResult.constituent_coverage && (
+                  <>
+                    <span>•</span>
+                    <span>Coverage: <strong className="text-cyan-400 font-bold">{Object.keys(scanResult.constituent_coverage).length}/10</strong></span>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -420,7 +507,7 @@ export default function Portfolio({
               <YAxis stroke="#8B949E" unit="%" domain={[4, 16]} tick={{ fontSize: 11 }} />
               <Tooltip content={<CustomHistoryTooltip />} />
               <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-              {['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA', 'JPM', 'JNJ', 'XOM'].map((t, i) => {
+              {(portfolio.length > 0 ? portfolio.map(p => p.ticker) : ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA', 'JPM', 'JNJ', 'XOM']).map((t, i) => {
                 const colors = [
                   '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6',
                   '#06b6d4', '#eab308', '#6366f1', '#14b8a6', '#f97316'
@@ -476,17 +563,29 @@ export default function Portfolio({
           </div>
         </div>
 
+        {(hasMixedMarkets || isIndiaOnly) && (
+          <div className="mb-4 px-3.5 py-2.5 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span>
+              <strong>{isIndiaOnly ? 'Indian Equity Portfolio (NSE):' : 'Dual-Market Portfolio (US & India):'}</strong> Multi-Currency Accounting Active. Constituents priced and traded natively in {isIndiaOnly ? '₹ INR' : '$ USD and ₹ INR'}, with consolidated reporting in {metrics?.reporting_currency || 'INR'}.
+            </span>
+            <span className="font-mono bg-blue-950/60 px-2.5 py-1 rounded border border-blue-800/40 text-[11px] text-blue-200 shrink-0">
+              FX Rate: 1 USD = {metrics?.fx_rate ?? 84.00} INR ({metrics?.fx_rate_is_live ? 'Live' : 'Fallback'})
+            </span>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm text-left border-collapse">
             <thead className="text-xs uppercase bg-background text-gray-400">
               <tr>
                 <th className="px-3 py-3 border-b border-border">Ticker</th>
+                <th className="px-3 py-3 border-b border-border text-center">Market</th>
                 <th className="px-3 py-3 border-b border-border text-right">Price</th>
                 <th className="px-3 py-3 border-b border-border text-right">Pre-Trade Wt</th>
                 <th className="px-3 py-3 border-b border-border text-right">Target Wt</th>
                 <th className="px-3 py-3 border-b border-border text-right">Delta (pp)</th>
                 <th className="px-3 py-3 border-b border-border text-right">Pre-Trade Shs</th>
-                <th className="px-3 py-3 border-b border-border text-center">Action</th>
+                <th className="px-3 py-3 border-b border-border text-center">Action / Status</th>
                 <th className="px-3 py-3 border-b border-border text-right">Signed Trade Qty</th>
                 <th className="px-3 py-3 border-b border-border text-right">Post-Trade Shs</th>
                 <th className="px-3 py-3 border-b border-border text-right">Order Notional</th>
@@ -505,6 +604,9 @@ export default function Portfolio({
                 const signedQty = row.signed_qty ?? (isBuy ? row.order_qty : (isSell ? -row.order_qty : 0.0));
                 const preShs = row.pre_shares ?? row.current_shares;
                 const postShs = row.post_shares ?? row.target_shares;
+                const symbol = row.currency_symbol || (row.currency === 'INR' ? '₹' : '$');
+                const isIndian = row.market === 'IN' || row.currency === 'INR';
+                const execStatus = row.execution_status || (isHold ? 'HOLD_NO_CHANGE' : 'EXECUTED_SIMULATED');
 
                 return (
                   <tr key={row.ticker} className="border-b border-border hover:bg-background/40 transition-colors">
@@ -520,8 +622,31 @@ export default function Portfolio({
                         )}
                       </button>
                     </td>
+                    <td className="px-3 py-3 text-center">
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono ${
+                        isIndian
+                          ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+                          : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                      }`}>
+                        {isIndian ? '🇮🇳 IN' : '🇺🇸 US'}
+                      </span>
+                    </td>
                     <td className="px-3 py-3 text-right font-mono">
-                      {row.price != null ? `$${row.price.toFixed(2)}` : <span className="text-gray-500 italic">Ref $100.00</span>}
+                      {row.price != null ? (
+                        <span>
+                          {symbol}{row.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span className="text-[10px] text-gray-400 block font-normal">
+                            {row.currency || (isIndian ? 'INR' : 'USD')}
+                            {isIndian && row.price_usd != null && ` ($${row.price_usd.toFixed(2)})`}
+                            {!isIndian && row.price_inr != null && ` (₹${row.price_inr.toFixed(2)})`}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-500 italic block leading-tight" title={row.is_fallback_price ? 'Fallback reference price (non-executable)' : 'Reference price'}>
+                          Ref {symbol}{Number(row.reference_price ?? (isIndian ? 1000 : 100)).toFixed(2)}
+                          <span className="text-[10px] text-amber-500/80 block font-normal not-italic">fallback</span>
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-right font-mono">
                       {preWt.toFixed(2)}%
@@ -538,21 +663,31 @@ export default function Portfolio({
                       {preShs != null ? preShs.toFixed(2) : '—'}
                     </td>
                     <td className="px-3 py-3 text-center">
-                      {isBuy && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-success/20 text-success border border-success/30 font-mono">
-                          + BUY
-                        </span>
-                      )}
-                      {isSell && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-danger/20 text-danger border border-danger/30 font-mono">
-                          - SELL
-                        </span>
-                      )}
-                      {isHold && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-400 border border-gray-700 font-mono">
-                          HOLD
-                        </span>
-                      )}
+                      <div className="flex flex-col items-center gap-1">
+                        {isBuy && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-success/20 text-success border border-success/30 font-mono">
+                            + BUY
+                          </span>
+                        )}
+                        {isSell && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-danger/20 text-danger border border-danger/30 font-mono">
+                            - SELL
+                          </span>
+                        )}
+                        {isHold && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-400 border border-gray-700 font-mono">
+                            HOLD
+                          </span>
+                        )}
+                        {(() => {
+                          const statusInfo = getExecutionStatusInfo(execStatus);
+                          return (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${statusInfo.badgeClass}`} title={statusInfo.description}>
+                              {statusInfo.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </td>
                     <td className={`px-3 py-3 text-right font-mono font-medium ${
                       signedQty > 0.001 ? 'text-success' : signedQty < -0.001 ? 'text-danger' : 'text-gray-400'
@@ -563,10 +698,30 @@ export default function Portfolio({
                       {postShs != null ? postShs.toFixed(2) : '—'}
                     </td>
                     <td className="px-3 py-3 text-right font-mono font-medium">
-                      {formatCurrency(row.trade_value)}
+                      <span>{formatMoney(row.trade_value, symbol)}</span>
+                      {isIndian && row.trade_value_usd > 0 && (
+                        <span className="text-[10px] text-gray-400 block font-normal">
+                          (${row.trade_value_usd.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})})
+                        </span>
+                      )}
+                      {!isIndian && row.trade_value_inr > 0 && (
+                        <span className="text-[10px] text-gray-400 block font-normal">
+                          (₹{row.trade_value_inr.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})})
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-right font-mono text-gray-400">
-                      {formatCurrency(row.est_fee)}
+                      <span>{formatMoney(row.est_fee, symbol)}</span>
+                      {isIndian && row.est_fee_usd > 0 && (
+                        <span className="text-[10px] text-gray-500 block font-normal">
+                          (${row.est_fee_usd.toFixed(2)})
+                        </span>
+                      )}
+                      {!isIndian && row.est_fee_inr > 0 && (
+                        <span className="text-[10px] text-gray-500 block font-normal">
+                          (₹{row.est_fee_inr.toFixed(2)})
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 max-w-[320px]">
                       <div className="flex items-center gap-2">
@@ -616,6 +771,103 @@ export default function Portfolio({
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Constituent News Ingestion & Freshness Coverage Matrix */}
+      <div className="card border border-border p-5 rounded-xl bg-card space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Newspaper size={18} className="text-primary shrink-0" />
+            <div>
+              <h3 className="text-base font-bold text-heading flex items-center gap-2">
+                Constituent News Coverage & Freshness Matrix
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                  10 Monitored Stocks
+                </span>
+              </h3>
+              <p className="text-xs text-gray-400">
+                Live verification across all 10 portfolio constituents: accounts for raw retrieved headlines, 72h freshness quarantine, generic SEO/13F exclusions, and active signal generation.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsCoverageOpen(!isCoverageOpen)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-background hover:bg-border/60 text-gray-300 transition-colors border border-border shrink-0 cursor-pointer self-start sm:self-auto"
+          >
+            <span>{isCoverageOpen ? 'Collapse Matrix' : 'Expand Matrix'}</span>
+            {isCoverageOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+
+        {isCoverageOpen && (
+          <div className="overflow-x-auto pt-2">
+            <table className="min-w-full text-xs text-left border-collapse">
+              <thead className="uppercase bg-background text-gray-400">
+                <tr>
+                  <th className="px-3 py-2.5 border-b border-border">Constituent</th>
+                  <th className="px-3 py-2.5 border-b border-border text-center">Feed Status</th>
+                  <th className="px-3 py-2.5 border-b border-border text-right font-mono">Raw Retrieved</th>
+                  <th className="px-3 py-2.5 border-b border-border text-right font-mono">Fresh Retained (≤72h)</th>
+                  <th className="px-3 py-2.5 border-b border-border text-right font-mono">Rejected Stale</th>
+                  <th className="px-3 py-2.5 border-b border-border text-right font-mono">Rejected SEO/13F</th>
+                  <th className="px-3 py-2.5 border-b border-border text-right font-mono">Assigned</th>
+                  <th className="px-3 py-2.5 border-b border-border text-right font-mono">LLM Analyzed</th>
+                  <th className="px-3 py-2.5 border-b border-border text-right font-mono">Signals</th>
+                  <th className="px-3 py-2.5 border-b border-border text-center">Coverage State</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {coverageData.length > 0 ? (
+                  coverageData.map((row: any) => {
+                    const badge = getCoverageStateBadge(row.coverage_state);
+                    return (
+                      <tr key={row.ticker} className="hover:bg-background/40 transition-colors">
+                        <td className="px-3 py-2 font-medium">
+                          <button
+                            onClick={() => navigate(`/stock/${row.ticker}`)}
+                            className="text-primary hover:underline font-bold text-left flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <span>{row.ticker}</span>
+                            <span className="text-[11px] text-gray-400 font-normal truncate max-w-[140px]">
+                              {row.company_name}
+                            </span>
+                          </button>
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono text-[11px]">
+                          <span className={`px-1.5 py-0.5 rounded ${
+                            row.feed_status === 'DEGRADED'
+                              ? 'bg-danger/20 text-danger border border-danger/30'
+                              : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          }`}>
+                            {row.feed_status || 'OK'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-300">{row.raw_retrieved ?? 0}</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-emerald-400">{row.fresh_retained ?? 0}</td>
+                        <td className="px-3 py-2 text-right font-mono text-amber-400">{row.rejected_stale ?? 0}</td>
+                        <td className="px-3 py-2 text-right font-mono text-yellow-400">{row.rejected_irrelevant ?? 0}</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-300">{row.assigned_to_company ?? 0}</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-300">{row.analyzed_count ?? 0}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-heading">{row.signals_count ?? 0}</td>
+                        <td className="px-3 py-2 text-center font-mono text-[11px]">
+                          <span className={`inline-flex px-2 py-0.5 rounded font-semibold border ${badge.badgeClass}`}>
+                            {badge.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={10} className="px-3 py-4 text-center text-gray-400">
+                      No market scan executed yet. Run a market scan to observe real-time news coverage across all 10 constituents.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Human Expert Review Second Opinion Card */}

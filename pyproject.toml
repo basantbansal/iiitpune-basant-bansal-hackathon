@@ -27,3 +27,6 @@ include = ["src*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "live: marks tests that query external network/provider endpoints",
+]
